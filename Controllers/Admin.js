@@ -206,7 +206,7 @@ const actualizarUsuario = async (req, res) => {
         }
 
         // 5. Validar rol si se modifica (roles de tu modelo)
-        const rolesPermitidos = ["dev", "Admin", "ventas", "mkt", "serv_tec"];
+        const rolesPermitidos = ["dev", "ger_com", "ceo", "admin", "ventas", "cobranza", "mkt", "serv_tec"];
         if (updates.rol && !rolesPermitidos.includes(updates.rol)) {
             return res.status(400).json({ 
                 ok: false, 
