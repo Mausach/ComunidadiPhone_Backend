@@ -1,7 +1,7 @@
 const express = require('express');
 const { check } = require('express-validator');
 const { validarCampos } = require('../midelwares/validarCampos');
-const { reporteCobranzaMensual, reporteCobranzaPorLocalidad, historialCuotasPorVenta, reporteEquiposCanjeados } = require('../controllers/reportes');
+const { reporteCobranzaMensual, reporteCobranzaPorLocalidad, historialCuotasPorVenta, reporteEquiposCanjeados } = require('../controlador/reportes');
 
 
 const routerReporteCobranza = express.Router();

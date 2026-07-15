@@ -2,7 +2,7 @@ const express = require('express');
 const { check } = require('express-validator');
 const { validarCampos } = require('../midelwares/validarCampos');
 const { validarJWTRolesSuperiores } = require('../midelwares/ValidarJWT_Admin_Dev');
-const { crearUsuario, actualizarUsuario, cargarUsuarios, CambiarEstadoUsuario } = require('../controllers/admin');
+const { crearUsuario, actualizarUsuario, cargarUsuarios, CambiarEstadoUsuario } = require('../controlador/admin');
 
 
 
