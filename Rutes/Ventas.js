@@ -1,8 +1,9 @@
 const express = require('express');
 const { check } = require('express-validator');
-const { validarJWTVentas } = require('../midelwares/ValidarJWT_ventas');
-const { validarCampos } = require('../midelwares/validarCampos');
+
 const { crearCliente, crearVenta, buscarClientePorDni } = require('../controlador/ventas');
+const { validarJWTVentas } = require('../midelwaresdefin/ValidarJWT_cobranza');
+const { validarCampos } = require('../midelwaresdefin/ValidarCampos');
 
 const routerVentas = express.Router();
 

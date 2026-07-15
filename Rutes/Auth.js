@@ -2,8 +2,9 @@ const express = require('express');
 
 const { check } = require('express-validator');
 const { loginUsuario, loginPrimerAcceso, configurarPasswordInicial } = require('../controlador/auth');
-const { verificarTokenSetup } = require('../midelwares/ValidarPrimerAcceso');
-const { validarCampos } = require('../midelwares/validarCampos');
+const { validarCampos } = require('../midelwaresdefin/ValidarCampos');
+const { verificarTokenSetup } = require('../midelwaresdefin/ValidarPrimerAcceso');
+
 
 const routerAuth = express.Router();
 

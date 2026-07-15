@@ -7,7 +7,7 @@
 
 const express = require('express');
 const { check } = require('express-validator');
-const { validarCampos } = require('../midelwares/validarCampos');
+
 
 const { listarVentasCobranza, detalleVentaCobranza, cobrarCuotas, editarFechaCuota, editarMontoCuota, cambiarEstadoCuota, agregarNotaCuota, listarCobranzasDelDia } = require('../controlador/cobranza');
 
