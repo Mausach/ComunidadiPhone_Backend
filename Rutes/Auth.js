@@ -1,7 +1,7 @@
 const express = require('express');
 
 const { check } = require('express-validator');
-const { loginUsuario, loginPrimerAcceso, configurarPasswordInicial } = require('../controllers/auth');
+const { loginUsuario, loginPrimerAcceso, configurarPasswordInicial } = require('../controllers/Auth');
 const { verificarTokenSetup } = require('../midelwares/ValidarPrimerAcceso');
 const { validarCampos } = require('../midelwares/validarCampos');
 
