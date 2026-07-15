@@ -1,5 +1,5 @@
-const EqupoCanjes = require("../Modelos/EqupoCanjes");
-const Venta = require("../Modelos/Venta");
+const EqupoCanjes = require("../modelos/EqupoCanjes");
+const Venta = require("../modelos/Venta");
 
 
 // Reporte de cobranza mensual

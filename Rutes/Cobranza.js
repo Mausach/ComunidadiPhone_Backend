@@ -9,7 +9,7 @@ const express = require('express');
 const { check } = require('express-validator');
 const { validarCampos } = require('../midelwares/validarCampos');
 
-const { listarVentasCobranza, detalleVentaCobranza, cobrarCuotas, editarFechaCuota, editarMontoCuota, cambiarEstadoCuota, agregarNotaCuota, listarCobranzasDelDia } = require('../Controllers/cobranza');
+const { listarVentasCobranza, detalleVentaCobranza, cobrarCuotas, editarFechaCuota, editarMontoCuota, cambiarEstadoCuota, agregarNotaCuota, listarCobranzasDelDia } = require('../controllers/cobranza');
 
 const routerCob = express.Router();
 

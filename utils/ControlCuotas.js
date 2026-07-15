@@ -1,4 +1,4 @@
-const Venta = require("../Modelos/Venta");
+const Venta = require("../modelos/Venta");
 
 
 const controlarEstadoCuotas = async () => {

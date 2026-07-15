@@ -1,6 +1,6 @@
-const Cliente = require("../Modelos/Cliente");
-const EqupoCanje = require("../Modelos/EqupoCanjes");
-const Venta = require("../Modelos/Venta");
+const Cliente = require("../modelos/Cliente");
+const EqupoCanje = require("../modelos/EqupoCanjes");
+const Venta = require("../modelos/Venta");
 
 
 const crearCliente = async (req, res) => {

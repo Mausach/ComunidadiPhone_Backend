@@ -1,6 +1,6 @@
 const bcryptjs = require('bcrypt');
 const jwt = require("jsonwebtoken");
-const Usuario = require('../Modelos/Usuario');
+const Usuario = require('../modelos/Usuario');
 
 
 // Crear usuario empleado
