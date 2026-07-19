@@ -240,7 +240,7 @@ const listarVentasCobranza = async (req, res) => {
         // ==========================================
         const [ventas, total] = await Promise.all([
             Venta.find(filtros)
-                .select('cliente.nombre cliente.apellido cliente.dni localidad tipoVenta fechaRealizada montoTotal montoPagado conducta_pago cuotas')
+                .select('cliente.nombre cliente.apellido cliente.dni producto.nombre producto.modelo localidad tipoVenta fechaRealizada montoTotal montoPagado conducta_pago cuotas')
                 .sort({ fechaRealizada: -1 })
                 .skip(skip)
                 .limit(limit)
@@ -256,7 +256,11 @@ const listarVentasCobranza = async (req, res) => {
             const cuotasPagadas = venta.cuotas.filter(c => c.estado_cuota === 'pagada').length;
             const cuotasAtrasadas = venta.cuotas.filter(c => c.estado_cuota === 'no pagada').length;
             const totalCuotas = venta.cuotas.length;
-            const montoPendiente = venta.montoTotal - (venta.montoPagado || 0);
+
+            // 👉 NUEVO: Monto pendiente = suma de cuotas NO pagadas
+            const montoPendiente = venta.cuotas
+                .filter(c => c.estado_cuota !== 'pagada')
+                .reduce((total, c) => total + c.montoCuota, 0);
 
             // Buscar si alguna cuota coincide con el rango de fechas de cuota
             let cuotasEnRango = [];
@@ -282,6 +286,7 @@ const listarVentasCobranza = async (req, res) => {
             return {
                 _id: venta._id,
                 cliente: venta.cliente,
+                producto: venta.producto,
                 localidad: venta.localidad,
                 tipoVenta: venta.tipoVenta,
                 fechaRealizada: venta.fechaRealizada,
@@ -331,6 +336,7 @@ const listarVentasCobranza = async (req, res) => {
         });
     }
 };
+
 //lista las ventas y cuotas del dia
 const listarCobranzasDelDia = async (req, res) => {
     try {
