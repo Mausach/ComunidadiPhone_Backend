@@ -1,7 +1,7 @@
 const express = require('express');
 const { check } = require('express-validator');
 
-const { reporteCobranzaMensual, reporteCobranzaPorLocalidad, historialCuotasPorVenta, reporteEquiposCanjeados } = require('../controlador/reportes');
+const { reporteCobranzaMensual, historialCuotasPorVenta, reporteEquiposCanjeados } = require('../controlador/reportes');
 const { validarCampos } = require('../midelwaresdefin/ValidarCampos');
 
 
@@ -23,16 +23,9 @@ routerReporteCobranza.get('/cobranza-mensual',
 );
 
 // Reporte de cobranza agrupado por localidad
-routerReporteCobranza.get('/cobranza-por-localidad',
-    [
-        check("mes", "El mes es obligatorio").not().isEmpty(),
-        check("anio", "El año es obligatorio").not().isEmpty(),
-        validarCampos
-    ],
-    reporteCobranzaPorLocalidad
-);
 
-// Reporte de equipos canjeados
+
+// Reporte de equipos canjeados FALTA MIDELWARE
 routerReporteCobranza.get('/equipos-canjeados',
     reporteEquiposCanjeados
 );

@@ -58,3 +58,6 @@ app.use("/cobranza",require('./Rutes/Cobranza'))
 
 //para los reportes del ceo
 app.use("/rep_ceo",require('./Rutes/Reportes'))
+
+//para los equiposde stock o inventario
+app.use("/inv",require('./Rutes/Stock'))

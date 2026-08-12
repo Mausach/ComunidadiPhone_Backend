@@ -12,13 +12,12 @@ const ventaSchema = new Schema({
         telefono: String,
         email: String,
         direccion: String,
-
     },
 
     // ==========================================
     // Localidad para mejorar reportes
     // ==========================================
-    localidad: { //cambiarla a venta para facilitar filtrado
+    localidad: {
         type: String,
         required: [true, 'La localidad es obligatoria'],
         lowercase: true,
@@ -32,8 +31,6 @@ const ventaSchema = new Schema({
         type: String,
         required: true,
         trim: true,
-        // Ejemplos: 'contado', 'financiado', 'permuta', 'plan_ahorro', etc.
-        // Se puede agregar cualquier tipo nuevo sin modificar el modelo
         index: true
     },
 
@@ -60,7 +57,7 @@ const ventaSchema = new Schema({
         nombre: {
             type: String,
             required: true,
-            trim: true  // Ej: "Samsung Galaxy S24 Ultra"
+            trim: true
         },
         modelo: {
             type: String,
@@ -78,7 +75,7 @@ const ventaSchema = new Schema({
             type: String,
             trim: true,
             unique: true,
-            sparse: true  // Permite null sin conflicto
+            sparse: true
         },
         estado: {
             type: String,
@@ -88,7 +85,7 @@ const ventaSchema = new Schema({
         valor: {
             type: Number,
             required: true,
-            min: 0  // Precio de venta
+            min: 0
         },
     },
 
@@ -118,20 +115,12 @@ const ventaSchema = new Schema({
             required: true,
             min: 0
         },
-        metodo: { //metodo principal de pago
+        metodo: {
             type: String,
             required: true,
             trim: true
-            // Ej: 'efectivo', 'transferencia', 'cripto', 'dolares', etc.
         },
-
-        // ❌ No tenés forma de registrar: PODRIA AGREGARSE A FUTURO
-        // - Si pagó en dólares o crypto
-        // - La cotización del día
-        // - El valor convertido a pesos
-        // Ejemplo real: "Pagó US$50 en USDT a cotización $1.200 = $60.000 ARS"
-
-        notas: [{ //aqui se aclara si se abono en otras monedas y como se abono eso
+        notas: [{
             texto: String,
             fecha: {
                 type: Date,
@@ -141,13 +130,10 @@ const ventaSchema = new Schema({
                 nombre: String
             }
         }],
-
-
         fecha: {
             type: Date,
             default: Date.now
         },
-
     }],
 
     // ==========================================
@@ -156,11 +142,11 @@ const ventaSchema = new Schema({
     montoTotal: {
         type: Number,
         required: true,
-        min: 0  // Valor total de la venta
+        min: 0
     },
-    montoPagado: { //A EVALUAR SI HACE FALTA
+    montoPagado: {
         type: Number,
-        default: 0  // Se actualiza con cada pago
+        default: 0
     },
 
     // ==========================================
@@ -190,19 +176,66 @@ const ventaSchema = new Schema({
     }],
 
     // ==========================================
-    // CUOTAS (para ventas plan canje sistema 1 y sistema 2)
+    // CUOTAS
     // ==========================================
-
     frecuenciaCuota: {
-    type: String,
-    enum: ['diario', 'semanal', 'quincenal', 'mensual'],
-    default: null  // 👈 null = no tiene cuotas
-},
+        type: String,
+        enum: ['diario', 'semanal', 'quincenal', 'mensual'],
+        default: null
+    },
 
     cuotas: [{
         numeroCuota: Number,
+        
+        // Monto original de la cuota (NUNCA se modifica)
         montoCuota: Number,
+        
+        // Monto realmente pagado (para pagos parciales)
+        montoPagado: {
+            type: Number,
+            default: 0
+        },
+        
+        // 👉 NUEVO: Array de recargos por atraso/mora (HISTÓRICO)
+        recargos: [{
+            monto: {
+                type: Number,
+                required: true,
+                min: 0
+            },
+            motivo: {
+                type: String,
+                required: true,
+                trim: true
+            },
+            fecha: {
+                type: Date,
+                default: Date.now,
+                required: true
+            },
+            // Días de atraso que generaron este recargo (para auditoría)
+            diasAtraso: {
+                type: Number,
+                default: 0
+            },
+            // Porcentaje aplicado (si es porcentaje)
+            porcentajeAplicado: {
+                type: Number,
+                default: 0
+            },
+            usuario: {
+                nombre: {
+                    type: String,
+                    required: true
+                }
+            }
+        }],
+        
+        // ⚠️ Campo calculado: total de recargos acumulados
+        // NO se guarda en BD, se calcula con un virtual o en el frontend
+        
         metodoPago: String,
+        
         notas: [{
             texto: String,
             fecha: {
@@ -213,14 +246,16 @@ const ventaSchema = new Schema({
                 nombre: String
             }
         }],
+        
         fechaCobro: Date,
+        
         estado_cuota: {
             type: String,
-            //-(cuando paga algo o se atrasa pero si paga)-(cuando no quiere pagar)(es base comoa rrancan todas las cuotas)
-            enum: ["pagada", "pendiente","pago parcial", "no pagada"]
+            enum: ["pagada", "pendiente", "pago parcial", "no pagada"]
         },
-
+        
         fechaCobrada: Date,
+        
         cobrador: {
             nombre: String
         }
@@ -231,10 +266,8 @@ const ventaSchema = new Schema({
     // ==========================================
     conducta_pago: {
         type: String,
-        //'activo', 'cancelado',                     'moroso', 'judicial', 'incobrable'
         enum: ["al dia", "cancelado", "refinanciado", "atrasado", "cobro judicial", "caducado"],
         default: 'al dia',
-
     },
 
     // ==========================================
@@ -242,10 +275,10 @@ const ventaSchema = new Schema({
     // ==========================================
     estado: {
         type: Boolean,
-        default: true  // Soft delete
+        default: true
     }
-},
-);
+});
+
 
 // ==========================================
 // EXPORTACIÓN

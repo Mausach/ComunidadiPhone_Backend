@@ -1,283 +1,15 @@
 const EqupoCanjes = require("../modelos/EqupoCanjes");
 const Venta = require("../modelos/Venta");
 
-
 // Reporte de cobranza mensual
-/*
-const reporteCobranzaMensual = async (req, res) => {
-    const { mes, anio, localidad } = req.query;
-
-    try {
-        // Validar mes y año obligatorios
-        if (!mes || !anio) {
-            return res.status(400).json({
-                ok: false,
-                msg: "El mes y año son obligatorios"
-            });
-        }
-
-        const mesNum = parseInt(mes);
-        const anioNum = parseInt(anio);
-
-        if (isNaN(mesNum) || mesNum < 1 || mesNum > 12) {
-            return res.status(400).json({
-                ok: false,
-                msg: "Mes inválido. Debe ser un número del 1 al 12"
-            });
-        }
-
-        if (isNaN(anioNum) || anioNum < 2000 || anioNum > 2100) {
-            return res.status(400).json({
-                ok: false,
-                msg: "Año inválido"
-            });
-        }
-
-        // Calcular rango del mes en UTC (Argentina = UTC-3)
-        // Ejemplo: mes=3, anio=2024 -> desde 2024-03-01T03:00:00Z hasta 2024-04-01T02:59:59Z
-        const fechaInicio = new Date(Date.UTC(anioNum, mesNum - 1, 1, 3, 0, 0)); // 1er día 00:00 ARG
-        const fechaFin = new Date(Date.UTC(anioNum, mesNum, 1, 2, 59, 59, 999)); // Último día 23:59 ARG
-
-        // Construir el match base
-        const matchVenta = {
-            estado: true,
-            'cuotas.fechaCobro': { $gte: fechaInicio, $lte: fechaFin }
-        };
-
-        // Agregar filtro por localidad si viene
-        if (localidad) {
-            matchVenta.localidad = localidad.toLowerCase().trim();
-        }
-
-        // Aggregation pipeline
-        const resultado = await Venta.aggregate([
-            // 1. Filtrar ventas activas con cuotas en ese mes
-            {
-                $match: matchVenta
-            },
-
-            // 2. Desarmar el array de cuotas
-            {
-                $unwind: '$cuotas'
-            },
-
-            // 3. Filtrar solo las cuotas que caen en el mes
-            {
-                $match: {
-                    'cuotas.fechaCobro': { $gte: fechaInicio, $lte: fechaFin }
-                }
-            },
-
-            // 4. Proyectar los campos que necesito
-            {
-                $project: {
-                    _id: 0,
-                    idVenta: '$_id',
-                    cliente: {
-                        nombre: '$cliente.nombre',
-                        apellido: '$cliente.apellido',
-                        dni: '$cliente.dni',
-                        telefono: '$cliente.telefono'
-                    },
-                    localidad: 1,
-                    tipoVenta: 1,
-                    vendedor: 1,
-                    producto: {
-                        nombre: '$producto.nombre',
-                        modelo: '$producto.modelo',
-                        valor: '$producto.valor'
-                    },
-                    cuota: {
-                        numeroCuota: '$cuotas.numeroCuota',
-                        montoCuota: '$cuotas.montoCuota',
-                        metodoPago: '$cuotas.metodoPago',
-                        estado_cuota: '$cuotas.estado_cuota',
-                        fechaCobro: '$cuotas.fechaCobro',
-                        fechaCobrada: '$cuotas.fechaCobrada',
-                        cobrador: '$cuotas.cobrador',
-                        notas: '$cuotas.notas'
-                    },
-                    conducta_pago: 1,
-                    montoTotal: 1
-                }
-            },
-
-            // 5. Ordenar por fecha de cobro y cliente
-            {
-                $sort: {
-                    'cuota.fechaCobro': 1,
-                    'cliente.apellido': 1
-                }
-            }
-        ]);
-
-        // Si no hay resultados
-        if (resultado.length === 0) {
-            return res.status(200).json({
-                ok: true,
-                msg: `No se encontraron cuotas para cobrar en ${mes}/${anio}`,
-                totalCuotas: 0,
-                resumen: {
-                    totalPagado: 0,
-                    totalPendiente: 0,
-                    totalNoPagado: 0,
-                    cantidadPagadas: 0,
-                    cantidadPendientes: 0,
-                    cantidadNoPagadas: 0
-                },
-                cuotas: []
-            });
-        }
-
-        // Calcular resumen
-        const resumen = resultado.reduce((acc, item) => {
-            if (item.cuota.estado_cuota === 'pagada') {
-                acc.totalPagado += item.cuota.montoCuota;
-                acc.cantidadPagadas += 1;
-            } else if (item.cuota.estado_cuota === 'pendiente') {
-                acc.totalPendiente += item.cuota.montoCuota;
-                acc.cantidadPendientes += 1;
-            } else if (item.cuota.estado_cuota === 'no pagada') {
-                acc.totalNoPagado += item.cuota.montoCuota;
-                acc.cantidadNoPagadas += 1;
-            }
-            return acc;
-        }, {
-            totalPagado: 0,
-            totalPendiente: 0,
-            totalNoPagado: 0,
-            cantidadPagadas: 0,
-            cantidadPendientes: 0,
-            cantidadNoPagadas: 0
-        });
-
-        // Respuesta exitosa
-        res.status(200).json({
-            ok: true,
-            msg: `Reporte de cobranza ${mes}/${anio}${localidad ? ' - ' + localidad : ''}`,
-            totalCuotas: resultado.length,
-            resumen,
-            cuotas: resultado
-        });
-
-    } catch (error) {
-        console.error('Error en reporte de cobranza:', error);
-        res.status(500).json({
-            ok: false,
-            msg: "Error al generar el reporte de cobranza"
-        });
-    }
-};
-*/
-
-
-// Reporte de cobranza mensual agrupado por localidad
-const reporteCobranzaPorLocalidad = async (req, res) => {
-    const { mes, anio } = req.query;
-
-    try {
-        if (!mes || !anio) {
-            return res.status(400).json({
-                ok: false,
-                msg: "El mes y año son obligatorios"
-            });
-        }
-
-        const mesNum = parseInt(mes);
-        const anioNum = parseInt(anio);
-
-        const fechaInicio = new Date(Date.UTC(anioNum, mesNum - 1, 1, 3, 0, 0));
-        const fechaFin = new Date(Date.UTC(anioNum, mesNum, 1, 2, 59, 59, 999));
-
-        const resultado = await Venta.aggregate([
-            {
-                $match: {
-                    estado: true,
-                    'cuotas.fechaCobro': { $gte: fechaInicio, $lte: fechaFin }
-                }
-            },
-            {
-                $unwind: '$cuotas'
-            },
-            {
-                $match: {
-                    'cuotas.fechaCobro': { $gte: fechaInicio, $lte: fechaFin }
-                }
-            },
-            {
-                $group: {
-                    _id: '$localidad',
-                    totalCuotas: { $sum: 1 },
-                    totalPagado: {
-                        $sum: {
-                            $cond: [{ $eq: ['$cuotas.estado_cuota', 'pagada'] }, '$cuotas.montoCuota', 0]
-                        }
-                    },
-                    totalPendiente: {
-                        $sum: {
-                            $cond: [{ $eq: ['$cuotas.estado_cuota', 'pendiente'] }, '$cuotas.montoCuota', 0]
-                        }
-                    },
-                    totalNoPagado: {
-                        $sum: {
-                            $cond: [{ $eq: ['$cuotas.estado_cuota', 'no pagada'] }, '$cuotas.montoCuota', 0]
-                        }
-                    },
-                    cuotasPagadas: {
-                        $sum: {
-                            $cond: [{ $eq: ['$cuotas.estado_cuota', 'pagada'] }, 1, 0]
-                        }
-                    },
-                    cuotasPendientes: {
-                        $sum: {
-                            $cond: [{ $eq: ['$cuotas.estado_cuota', 'pendiente'] }, 1, 0]
-                        }
-                    },
-                    cuotasNoPagadas: {
-                        $sum: {
-                            $cond: [{ $eq: ['$cuotas.estado_cuota', 'no pagada'] }, 1, 0]
-                        }
-                    }
-                }
-            },
-            {
-                $project: {
-                    _id: 0,
-                    localidad: '$_id',
-                    totalCuotas: 1,
-                    totalPagado: 1,
-                    totalPendiente: 1,
-                    totalNoPagado: 1,
-                    cuotasPagadas: 1,
-                    cuotasPendientes: 1,
-                    cuotasNoPagadas: 1
-                }
-            },
-            {
-                $sort: { localidad: 1 }
-            }
-        ]);
-
-        res.status(200).json({
-            ok: true,
-            msg: `Reporte de cobranza por localidad ${mes}/${anio}`,
-            localidades: resultado
-        });
-
-    } catch (error) {
-        console.error('Error en reporte por localidad:', error);
-        res.status(500).json({
-            ok: false,
-            msg: "Error al generar el reporte por localidad"
-        });
-    }
-};
 
 const reporteCobranzaMensual = async (req, res) => {
     const { mes, anio } = req.query;
 
     try {
-        // Validaciones
+        // ==========================================
+        // VALIDACIONES
+        // ==========================================
         if (!mes || !anio) {
             return res.status(400).json({
                 ok: false,
@@ -302,17 +34,29 @@ const reporteCobranzaMensual = async (req, res) => {
             });
         }
 
-        // Calcular rango del mes considerando zona horaria Argentina (UTC-3)
+        // ==========================================
+        // CALCULAR RANGO DEL MES (UTC-3)
+        // ==========================================
         const fechaInicio = new Date(Date.UTC(anioNum, mesNum - 1, 1, 3, 0, 0));
         const fechaFin = new Date(Date.UTC(anioNum, mesNum, 1, 2, 59, 59, 999));
 
+        // ==========================================
+        // FUNCIÓN PARA CALCULAR RECARGOS
+        // ==========================================
+        const calcularTotalRecargos = (recargos) => {
+            if (!recargos || recargos.length === 0) return 0;
+            return recargos.reduce((sum, r) => sum + (r.monto || 0), 0);
+        };
+
+        // ==========================================
+        // AGREGACIÓN PRINCIPAL
+        // ==========================================
         const resultado = await Venta.aggregate([
-            // 1. Solo ventas activas que tengan cuotas en ese mes
+            // 1. Solo ventas activas con cuotas
             {
                 $match: {
                     estado: true,
-                    cuotas: { $exists: true, $not: { $size: 0 } },
-                    'cuotas.fechaCobro': { $gte: fechaInicio, $lte: fechaFin }
+                    cuotas: { $exists: true, $not: { $size: 0 } }
                 }
             },
 
@@ -321,27 +65,65 @@ const reporteCobranzaMensual = async (req, res) => {
                 $unwind: '$cuotas'
             },
 
-            // 3. Filtrar solo las cuotas del mes
+            // 3. Filtrar solo las cuotas del mes (por fecha de cobro)
             {
                 $match: {
                     'cuotas.fechaCobro': { $gte: fechaInicio, $lte: fechaFin }
                 }
             },
 
-            // 4. Proyectar solo lo que necesitas
+            // 4. Calcular total de recargos de la cuota
+            {
+                $addFields: {
+                    'cuotas.totalRecargos': {
+                        $sum: '$cuotas.recargos.monto'
+                    },
+                    'cuotas.cantidadRecargos': {
+                        $size: { $ifNull: ['$cuotas.recargos', []] }
+                    },
+                    'cuotas.totalCuota': {
+                        $add: [
+                            '$cuotas.montoCuota',
+                            { $sum: '$cuotas.recargos.monto' }
+                        ]
+                    },
+                    'cuotas.saldoPendiente': {
+                        $subtract: [
+                            {
+                                $add: [
+                                    '$cuotas.montoCuota',
+                                    { $sum: '$cuotas.recargos.monto' }
+                                ]
+                            },
+                            { $ifNull: ['$cuotas.montoPagado', 0] }
+                        ]
+                    }
+                }
+            },
+
+            // 5. Proyectar datos finales
             {
                 $project: {
                     _id: 0,
                     idVenta: '$_id',
                     cliente: {
                         nombre: '$cliente.nombre',
-                        apellido: '$cliente.apellido'
+                        apellido: '$cliente.apellido',
+                        dni: '$cliente.dni'
                     },
                     localidad: 1,
                     tipoVenta: 1,
                     producto: '$producto.nombre',
                     numeroCuota: '$cuotas.numeroCuota',
                     montoCuota: '$cuotas.montoCuota',
+                    // Recargos
+                    recargos: '$cuotas.recargos',
+                    totalRecargos: '$cuotas.totalRecargos',
+                    cantidadRecargos: '$cuotas.cantidadRecargos',
+                    // Montos reales
+                    totalCuota: '$cuotas.totalCuota',
+                    montoPagado: { $ifNull: ['$cuotas.montoPagado', 0] },
+                    saldoPendiente: '$cuotas.saldoPendiente',
                     estadoCuota: '$cuotas.estado_cuota',
                     fechaCobro: '$cuotas.fechaCobro',
                     fechaCobrada: '$cuotas.fechaCobrada',
@@ -351,7 +133,7 @@ const reporteCobranzaMensual = async (req, res) => {
                 }
             },
 
-            // 5. Ordenar por fecha de cobro
+            // 6. Ordenar por fecha de cobro
             {
                 $sort: {
                     fechaCobro: 1
@@ -359,33 +141,95 @@ const reporteCobranzaMensual = async (req, res) => {
             }
         ]);
 
+        // ==========================================
+        // VERIFICAR SI HAY RESULTADOS
+        // ==========================================
         if (resultado.length === 0) {
             return res.status(200).json({
                 ok: true,
                 msg: `No hay cuotas para el período ${mesNum}/${anioNum}`,
                 totalCuotas: 0,
+                resumen: {
+                    totalCuotas: 0,
+                    totalCapital: 0,
+                    totalRecargos: 0,
+                    totalCobrado: 0,
+                    totalPendiente: 0,
+                    cuotasPagadas: 0,
+                    cuotasPagoParcial: 0,
+                    cuotasPendientes: 0,
+                    cuotasNoPagadas: 0,
+                    cuotasConRecargos: 0,
+                    totalRecargosPendientes: 0
+                },
                 cuotas: []
             });
         }
 
+        // ==========================================
+        // CALCULAR RESUMEN (CON RECARGOS)
+        // ==========================================
+        const resumen = {
+            totalCuotas: resultado.length,
+            totalCapital: resultado.reduce((sum, c) => sum + c.montoCuota, 0),
+            totalRecargos: resultado.reduce((sum, c) => sum + c.totalRecargos, 0),
+            totalCobrado: resultado.reduce((sum, c) => sum + c.montoPagado, 0),
+            totalPendiente: resultado.reduce((sum, c) => sum + c.saldoPendiente, 0),
+            
+            // Estado de cuotas
+            cuotasPagadas: resultado.filter(c => c.estadoCuota === 'pagada').length,
+            cuotasPagoParcial: resultado.filter(c => c.estadoCuota === 'pago parcial').length,
+            cuotasPendientes: resultado.filter(c => c.estadoCuota === 'pendiente').length,
+            cuotasNoPagadas: resultado.filter(c => c.estadoCuota === 'no pagada').length,
+            
+            // Información de recargos
+            cuotasConRecargos: resultado.filter(c => c.cantidadRecargos > 0).length,
+            totalRecargosPendientes: resultado
+                .filter(c => c.estadoCuota !== 'pagada')
+                .reduce((sum, c) => sum + c.totalRecargos, 0),
+            
+            // Eficiencia de cobranza
+            eficienciaCobranza: resultado.length > 0 
+                ? ((resultado.filter(c => c.estadoCuota === 'pagada').length / resultado.length) * 100).toFixed(2)
+                : 0,
+            
+            // Monto promedio con recargos
+            promedioCuota: resultado.length > 0
+                ? (resultado.reduce((sum, c) => sum + c.totalCuota, 0) / resultado.length).toFixed(2)
+                : 0
+        };
+
+        // ==========================================
+        // RESPONDER
+        // ==========================================
         res.status(200).json({
             ok: true,
             msg: `Reporte de cobranza ${mesNum}/${anioNum}`,
-            totalCuotas: resultado.length,
+            periodo: {
+                mes: mesNum,
+                anio: anioNum,
+                fechaInicio,
+                fechaFin
+            },
+            resumen,
             cuotas: resultado
         });
 
     } catch (error) {
-        console.error('Error en reporte de cobranza:', error);
+        console.error('Error en reporte de cobranza mensual:', error);
         res.status(500).json({
             ok: false,
-            msg: "Error al generar el reporte"
+            msg: "Error al generar el reporte",
+            error: error.message
         });
     }
 };
 
 const historialCuotasPorVenta = async (req, res) => {
     try {
+        // ==========================================
+        // AGREGACIÓN PRINCIPAL
+        // ==========================================
         const resultado = await Venta.aggregate([
             // 1. Solo ventas activas que tengan cuotas
             {
@@ -400,23 +244,59 @@ const historialCuotasPorVenta = async (req, res) => {
                 $unwind: '$cuotas'
             },
 
-            // 3. Agrupar por venta para armar el historial
+            // 3. Calcular total de recargos por cuota
+            {
+                $addFields: {
+                    'cuotas.totalRecargos': {
+                        $sum: '$cuotas.recargos.monto'
+                    },
+                    'cuotas.cantidadRecargos': {
+                        $size: { $ifNull: ['$cuotas.recargos', []] }
+                    },
+                    'cuotas.totalCuota': {
+                        $add: [
+                            '$cuotas.montoCuota',
+                            { $sum: '$cuotas.recargos.monto' }
+                        ]
+                    },
+                    'cuotas.saldoPendiente': {
+                        $subtract: [
+                            {
+                                $add: [
+                                    '$cuotas.montoCuota',
+                                    { $sum: '$cuotas.recargos.monto' }
+                                ]
+                            },
+                            { $ifNull: ['$cuotas.montoPagado', 0] }
+                        ]
+                    }
+                }
+            },
+
+            // 4. Agrupar por venta para armar el historial
             {
                 $group: {
                     _id: '$_id',
                     cliente: { $first: '$cliente' },
                     localidad: { $first: '$localidad' },
                     tipoVenta: { $first: '$tipoVenta' },
-                    frecuenciaCuota: { $first: '$frecuenciaCuota' }, // 👈 NUEVO
+                    frecuenciaCuota: { $first: '$frecuenciaCuota' },
                     vendedor: { $first: '$vendedor' },
                     producto: { $first: '$producto.nombre' },
                     modelo: { $first: '$producto.modelo' },
                     montoTotal: { $first: '$montoTotal' },
                     conducta_pago: { $first: '$conducta_pago' },
                     totalCuotas: { $sum: 1 },
+                    
+                    // Contadores por estado
                     cuotasPagadas: {
                         $sum: {
                             $cond: [{ $eq: ['$cuotas.estado_cuota', 'pagada'] }, 1, 0]
+                        }
+                    },
+                    cuotasPagoParcial: {
+                        $sum: {
+                            $cond: [{ $eq: ['$cuotas.estado_cuota', 'pago parcial'] }, 1, 0]
                         }
                     },
                     cuotasPendientes: {
@@ -429,37 +309,78 @@ const historialCuotasPorVenta = async (req, res) => {
                             $cond: [{ $eq: ['$cuotas.estado_cuota', 'no pagada'] }, 1, 0]
                         }
                     },
+                    
+                    // Montos de capital
+                    totalCapital: { $sum: '$cuotas.montoCuota' },
+                    
+                    // Recargos totales generados en la venta
+                    totalRecargosGenerados: { $sum: '$cuotas.totalRecargos' },
+                    
+                    // Recargos cobrados (de cuotas pagadas o parciales)
+                    totalRecargosCobrados: {
+                        $sum: {
+                            $cond: [
+                                { $in: ['$cuotas.estado_cuota', ['pagada', 'pago parcial']] },
+                                { $min: ['$cuotas.totalRecargos', { $ifNull: ['$cuotas.montoPagado', 0] }] },
+                                0
+                            ]
+                        }
+                    },
+                    
+                    // Recargos pendientes
+                    totalRecargosPendientes: {
+                        $sum: {
+                            $subtract: [
+                                '$cuotas.totalRecargos',
+                                {
+                                    $cond: [
+                                        { $in: ['$cuotas.estado_cuota', ['pagada', 'pago parcial']] },
+                                        { $min: ['$cuotas.totalRecargos', { $ifNull: ['$cuotas.montoPagado', 0] }] },
+                                        0
+                                    ]
+                                }
+                            ]
+                        }
+                    },
+                    
+                    // Monto pagado real (incluye recargos)
                     montoPagado: {
+                        $sum: { $ifNull: ['$cuotas.montoPagado', 0] }
+                    },
+                    
+                    // Total real de la venta (capital + recargos)
+                    totalReal: {
+                        $sum: '$cuotas.totalCuota'
+                    },
+                    
+                    // Saldo pendiente real
+                    saldoPendienteReal: {
+                        $sum: '$cuotas.saldoPendiente'
+                    },
+                    
+                    // Conteo de cuotas con recargos
+                    cuotasConRecargos: {
                         $sum: {
                             $cond: [
-                                { $eq: ['$cuotas.estado_cuota', 'pagada'] },
-                                '$cuotas.montoCuota',
+                                { $gt: ['$cuotas.totalRecargos', 0] },
+                                1,
                                 0
                             ]
                         }
                     },
-                    montoPendiente: {
-                        $sum: {
-                            $cond: [
-                                { $eq: ['$cuotas.estado_cuota', 'pendiente'] },
-                                '$cuotas.montoCuota',
-                                0
-                            ]
-                        }
-                    },
-                    montoNoPagado: {
-                        $sum: {
-                            $cond: [
-                                { $eq: ['$cuotas.estado_cuota', 'no pagada'] },
-                                '$cuotas.montoCuota',
-                                0
-                            ]
-                        }
-                    },
+                    
+                    // Detalle de cuotas con recargos
                     detalleCuotas: {
                         $push: {
                             numeroCuota: '$cuotas.numeroCuota',
                             montoCuota: '$cuotas.montoCuota',
+                            // Recargos de la cuota
+                            recargos: '$cuotas.recargos',
+                            totalRecargos: '$cuotas.totalRecargos',
+                            cantidadRecargos: '$cuotas.cantidadRecargos',
+                            totalCuota: '$cuotas.totalCuota',
+                            montoPagado: { $ifNull: ['$cuotas.montoPagado', 0] },
+                            saldoPendiente: '$cuotas.saldoPendiente',
                             estadoCuota: '$cuotas.estado_cuota',
                             fechaCobro: '$cuotas.fechaCobro',
                             fechaCobrada: '$cuotas.fechaCobrada',
@@ -470,7 +391,7 @@ const historialCuotasPorVenta = async (req, res) => {
                 }
             },
 
-            // 4. Ordenar detalle de cuotas por número
+            // 5. Ordenar detalle de cuotas por número
             {
                 $addFields: {
                     detalleCuotas: {
@@ -482,20 +403,37 @@ const historialCuotasPorVenta = async (req, res) => {
                 }
             },
 
-            // 5. Calcular porcentaje de avance
+            // 6. Calcular porcentajes y métricas
             {
                 $addFields: {
+                    // Porcentaje de cobranza (sobre total real)
                     porcentajeCobrado: {
                         $cond: [
-                            { $gt: ['$montoTotal', 0] },
-                            { $round: [{ $multiply: [{ $divide: ['$montoPagado', '$montoTotal'] }, 100] }, 2] },
+                            { $gt: ['$totalReal', 0] },
+                            { $round: [{ $multiply: [{ $divide: ['$montoPagado', '$totalReal'] }, 100] }, 2] },
+                            0
+                        ]
+                    },
+                    // Porcentaje de recargos cobrados
+                    porcentajeRecargosCobrados: {
+                        $cond: [
+                            { $gt: ['$totalRecargosGenerados', 0] },
+                            { $round: [{ $multiply: [{ $divide: ['$totalRecargosCobrados', '$totalRecargosGenerados'] }, 100] }, 2] },
+                            0
+                        ]
+                    },
+                    // Eficiencia de cobranza (cuotas pagadas vs total)
+                    eficienciaCobranza: {
+                        $cond: [
+                            { $gt: ['$totalCuotas', 0] },
+                            { $round: [{ $multiply: [{ $divide: ['$cuotasPagadas', '$totalCuotas'] }, 100] }, 2] },
                             0
                         ]
                     }
                 }
             },
 
-            // 6. Ordenar por conducta de pago y cliente
+            // 7. Ordenar por conducta de pago y cliente
             {
                 $sort: {
                     conducta_pago: 1,
@@ -503,7 +441,7 @@ const historialCuotasPorVenta = async (req, res) => {
                 }
             },
 
-            // 7. Proyectar final
+            // 8. Proyectar final
             {
                 $project: {
                     _id: 0,
@@ -511,58 +449,123 @@ const historialCuotasPorVenta = async (req, res) => {
                     cliente: 1,
                     localidad: 1,
                     tipoVenta: 1,
-                    frecuenciaCuota: 1, // 👈 NUEVO
+                    frecuenciaCuota: 1,
                     vendedor: 1,
                     producto: 1,
                     modelo: 1,
                     montoTotal: 1,
                     conducta_pago: 1,
                     totalCuotas: 1,
+                    
+                    // Estados
                     cuotasPagadas: 1,
+                    cuotasPagoParcial: 1,
                     cuotasPendientes: 1,
                     cuotasNoPagadas: 1,
+                    cuotasConRecargos: 1,
+                    
+                    // Montos
+                    totalCapital: 1,
+                    totalRecargosGenerados: 1,
+                    totalRecargosCobrados: 1,
+                    totalRecargosPendientes: 1,
                     montoPagado: 1,
-                    montoPendiente: 1,
-                    montoNoPagado: 1,
+                    totalReal: 1,
+                    saldoPendienteReal: 1,
+                    
+                    // Métricas
                     porcentajeCobrado: 1,
+                    porcentajeRecargosCobrados: 1,
+                    eficienciaCobranza: 1,
+                    
+                    // Detalle
                     detalleCuotas: 1
                 }
             }
         ]);
 
+        // ==========================================
+        // VERIFICAR RESULTADOS
+        // ==========================================
         if (resultado.length === 0) {
             return res.status(200).json({
                 ok: true,
                 msg: "No hay ventas con cuotas registradas",
                 totalVentas: 0,
+                totalesGenerales: {
+                    totalVentas: 0,
+                    totalCuotas: 0,
+                    totalCuotasPagadas: 0,
+                    totalCuotasPagoParcial: 0,
+                    totalCuotasPendientes: 0,
+                    totalCuotasNoPagadas: 0,
+                    totalCuotasConRecargos: 0,
+                    totalCapital: 0,
+                    totalRecargosGenerados: 0,
+                    totalRecargosCobrados: 0,
+                    totalRecargosPendientes: 0,
+                    totalPagado: 0,
+                    totalReal: 0,
+                    totalPendienteReal: 0,
+                    promedioRecargosPorVenta: 0,
+                    eficienciaGeneral: 0
+                },
                 ventas: []
             });
         }
 
-        // Totales generales
+        // ==========================================
+        // CALCULAR TOTALES GENERALES
+        // ==========================================
         const totalesGenerales = resultado.reduce((acc, venta) => {
             acc.totalVentas += 1;
             acc.totalCuotas += venta.totalCuotas;
             acc.totalCuotasPagadas += venta.cuotasPagadas;
+            acc.totalCuotasPagoParcial += venta.cuotasPagoParcial;
             acc.totalCuotasPendientes += venta.cuotasPendientes;
             acc.totalCuotasNoPagadas += venta.cuotasNoPagadas;
-            acc.montoTotalGeneral += venta.montoTotal;
-            acc.montoPagadoGeneral += venta.montoPagado;
-            acc.montoPendienteGeneral += venta.montoPendiente;
-            acc.montoNoPagadoGeneral += venta.montoNoPagado;
+            acc.totalCuotasConRecargos += venta.cuotasConRecargos || 0;
+            acc.totalCapital += venta.totalCapital || 0;
+            acc.totalRecargosGenerados += venta.totalRecargosGenerados || 0;
+            acc.totalRecargosCobrados += venta.totalRecargosCobrados || 0;
+            acc.totalRecargosPendientes += venta.totalRecargosPendientes || 0;
+            acc.totalPagado += venta.montoPagado || 0;
+            acc.totalReal += venta.totalReal || 0;
+            acc.totalPendienteReal += venta.saldoPendienteReal || 0;
             return acc;
         }, {
             totalVentas: 0,
             totalCuotas: 0,
             totalCuotasPagadas: 0,
+            totalCuotasPagoParcial: 0,
             totalCuotasPendientes: 0,
             totalCuotasNoPagadas: 0,
-            montoTotalGeneral: 0,
-            montoPagadoGeneral: 0,
-            montoPendienteGeneral: 0,
-            montoNoPagadoGeneral: 0
+            totalCuotasConRecargos: 0,
+            totalCapital: 0,
+            totalRecargosGenerados: 0,
+            totalRecargosCobrados: 0,
+            totalRecargosPendientes: 0,
+            totalPagado: 0,
+            totalReal: 0,
+            totalPendienteReal: 0
         });
 
+        // Calcular métricas generales
+        totalesGenerales.promedioRecargosPorVenta = totalesGenerales.totalVentas > 0
+            ? (totalesGenerales.totalRecargosGenerados / totalesGenerales.totalVentas).toFixed(2)
+            : 0;
+
+        totalesGenerales.eficienciaGeneral = totalesGenerales.totalCuotas > 0
+            ? ((totalesGenerales.totalCuotasPagadas / totalesGenerales.totalCuotas) * 100).toFixed(2)
+            : 0;
+
+        totalesGenerales.porcentajeCobradoGeneral = totalesGenerales.totalReal > 0
+            ? ((totalesGenerales.totalPagado / totalesGenerales.totalReal) * 100).toFixed(2)
+            : 0;
+
+        // ==========================================
+        // RESPONDER
+        // ==========================================
         res.status(200).json({
             ok: true,
             msg: "Historial de cuotas por venta",
@@ -574,11 +577,11 @@ const historialCuotasPorVenta = async (req, res) => {
         console.error('Error en historial de cuotas:', error);
         res.status(500).json({
             ok: false,
-            msg: "Error al generar el historial de cuotas"
+            msg: "Error al generar el historial de cuotas",
+            error: error.message
         });
     }
 };
-
 
 const reporteEquiposCanjeados = async (req, res) => {
     try {
@@ -688,7 +691,6 @@ const reporteEquiposCanjeados = async (req, res) => {
 };
 
 module.exports = {
-    reporteCobranzaPorLocalidad,
     reporteCobranzaMensual,
     historialCuotasPorVenta,
     reporteEquiposCanjeados

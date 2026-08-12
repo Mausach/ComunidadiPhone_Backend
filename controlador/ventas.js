@@ -1,5 +1,6 @@
 const Cliente = require("../modelos/Cliente");
-const EqupoCanje = require("../modelos/EqupoCanjes");
+const EqupoCanjes = require("../modelos/EqupoCanjes");
+
 const Venta = require("../modelos/Venta");
 
 
@@ -116,10 +117,8 @@ const crearCliente = async (req, res) => {
 // En tu controlador de backend
 const buscarClientePorDni = async (req, res) => {
     try {
-        // ✅ Leer de req.params (porque la ruta es /buscar-cliente/:dni)
-        const { dni } = req.params;  // 👈 CAMBIAR A req.params
-
-        console.log('🔍 DNI recibido:', dni);
+        
+        const { dni } = req.params;  
 
         if (!dni) {
             return res.status(400).json({
@@ -206,37 +205,6 @@ const calcularProximaFecha = (fecha, frecuencia, numeroCuota) => {
 
     return nuevaFecha;
 };
-
-
-/*
-
-const calcularProximaFecha = (fecha, frecuencia, numeroCuota) => {
-    const nuevaFecha = new Date(fecha);
-
-    switch (frecuencia) {
-        case 'diario':
-            nuevaFecha.setUTCDate(nuevaFecha.getUTCDate() + 1);
-            break;
-
-        case 'semanal':
-            nuevaFecha.setUTCDate(nuevaFecha.getUTCDate() + 7);
-            break;
-
-        case 'quincenal':
-            nuevaFecha.setUTCDate(nuevaFecha.getUTCDate() + 15);
-            break;
-
-        case 'mensual':
-        default:
-            nuevaFecha.setUTCMonth(nuevaFecha.getUTCMonth() + 1);
-            nuevaFecha.setUTCDate(10);
-            break;
-    }
-
-    return nuevaFecha;
-};
-
-*/
 
 
 const crearVenta = async (req, res) => {
@@ -404,8 +372,12 @@ const crearVenta = async (req, res) => {
 
                 if (cuotasGeneradas.length > 0) {
                     cuotasGeneradas[0].estado_cuota = 'pagada';
-                    cuotasGeneradas[0].fechaCobrada = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Argentina/Buenos_Aires' }));
+                    cuotasGeneradas[0].fechaCobrada = new Date(new Date().toLocaleString('en-US', { 
+                        timeZone: 'America/Argentina/Buenos_Aires' 
+                    }));
                     cuotasGeneradas[0].metodoPago = 'efectivo';
+                    cuotasGeneradas[0].montoPagado = montoCuota; // ✅ El monto pagado es igual al valor de la cuota
+                    cuotasGeneradas[0].fechaCobro = fechaRealizadaARG; // ✅ Fecha de cobro es la fecha de la venta
                 }
 
                 montoTotal = montoCuota * cantidadCuotas;
@@ -421,7 +393,7 @@ const crearVenta = async (req, res) => {
                 }
 
                 if (equipoCanje.imei) {
-                    const imeiCanjeExistente = await EquipoCanje.findOne({
+                    const imeiCanjeExistente = await EqupoCanjes.findOne({
                         imei: equipoCanje.imei,
                         activo: true
                     });
@@ -529,7 +501,7 @@ const crearVenta = async (req, res) => {
                 fechaRecepcion: fechaRealizadaARG
             };
 
-            await EquipoCanje.create(datosEquipoCanje);
+            await EqupoCanjes.create(datosEquipoCanje);
         }
 
         return res.status(201).json({

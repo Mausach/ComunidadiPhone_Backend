@@ -1,6 +1,6 @@
 const jwt = require('jsonwebtoken');
 
-const validarJWTVentas = (req, res, next) => {  
+const validarJWTCobranza = (req, res, next) => {  
     // Extraer el token del header 'x-token'
     const token = req.header('x-token');
 
@@ -44,5 +44,5 @@ const validarJWTVentas = (req, res, next) => {
 };
 
 module.exports = {
-    validarJWTVentas,  // Exportar con el nuevo nombre
+    validarJWTCobranza,  // Exportar con el nuevo nombre
 };

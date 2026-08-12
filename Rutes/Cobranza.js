@@ -9,20 +9,27 @@ const express = require('express');
 const { check } = require('express-validator');
 
 
-const { listarVentasCobranza, detalleVentaCobranza, cobrarCuotas, editarFechaCuota, editarMontoCuota, cambiarEstadoCuota, agregarNotaCuota, listarCobranzasDelDia } = require('../controlador/cobranza');
+const { listarVentasCobranza, detalleVentaCobranza, cobrarCuotas, editarFechaCuota, editarMontoCuota, cambiarEstadoCuota, agregarNotaCuota, listarCobranzasDelDia, editarRecargoCuota, agregarRecargoACuota } = require('../controlador/cobranza');
+const { validarJWTCobranza } = require('../midelwaresdefin/ValidarJWT_cobranza');
 
 const routerCob = express.Router();
 
-routerCob.get('/ventas', listarVentasCobranza);
-routerCob.get('/cobranzas-hoy', listarCobranzasDelDia);
-routerCob.get('/ventas/:id', detalleVentaCobranza);
-routerCob.post('/cobrar-cuotas', cobrarCuotas);
+routerCob.get('/ventas', validarJWTCobranza, listarVentasCobranza);
+//routerCob.get('/cobranzas-hoy', listarCobranzasDelDia);
+routerCob.get('/ventas/:id',validarJWTCobranza ,detalleVentaCobranza);
+routerCob.post('/cobrar-cuotas',validarJWTCobranza, cobrarCuotas);
 
 // En cobranzaRoutes.js
-routerCob.put('/cuotas/:idVenta/:numeroCuota/fecha', editarFechaCuota);
-routerCob.put('/cuotas/:idVenta/:numeroCuota/monto', editarMontoCuota);
-routerCob.put('/cuotas/:idVenta/:numeroCuota/estado', cambiarEstadoCuota);
-routerCob.post('/cuotas/:idVenta/:numeroCuota/nota', agregarNotaCuota);
+routerCob.put('/cuotas/:idVenta/:numeroCuota/fecha',validarJWTCobranza ,editarFechaCuota);
+routerCob.put('/cuotas/:idVenta/:numeroCuota/monto',validarJWTCobranza ,editarMontoCuota);
+// ==========================================
+// RUTA PARA EDITAR RECARGO DE UNA CUOTA
+// ==========================================
+//routerCob.put('/cuotas/:idVenta/:numeroCuota/recargo', validarJWTCobranza, editarRecargoCuota);
+// Agregar recargo manual a una cuota
+routerCob.post('/cuotas/:idVenta/:numeroCuota/recargo', validarJWTCobranza, agregarRecargoACuota);
+routerCob.put('/cuotas/:idVenta/:numeroCuota/estado',validarJWTCobranza, cambiarEstadoCuota);
+routerCob.post('/cuotas/:idVenta/:numeroCuota/nota',validarJWTCobranza, agregarNotaCuota);
 
 
 module.exports = routerCob;
