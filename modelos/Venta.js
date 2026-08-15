@@ -102,6 +102,7 @@ const ventaSchema = new Schema({
         dni: String,
         cuil: String,
         telefono: String,
+        telefono2: String,
         email: String,
         direccion: String,
     },

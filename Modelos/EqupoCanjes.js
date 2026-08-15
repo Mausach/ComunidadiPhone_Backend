@@ -39,6 +39,12 @@ const equipoCanjeSchema = new Schema({
         required: true,
         min: 0
     },
+    // Localidad/destino del equipo
+    localidad: {
+        type: String,
+        trim: true,
+        lowercase: true
+    },
     fechaRecepcion: {
         type: Date,
         default: Date.now
@@ -53,7 +59,7 @@ const equipoCanjeSchema = new Schema({
             nombre: String
         }
     }],
-    activo: { //activo seria disponible falso seria que no lo esta
+    activo: {
         type: Boolean,
         default: true
     }

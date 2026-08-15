@@ -11,6 +11,7 @@ const crearCliente = async (req, res) => {
         dni,
         cuil,
         telefono,
+        telefono2,  // 👉 NUEVO
         email,
         direccion,
         situacionCrediticia
@@ -63,6 +64,8 @@ const crearCliente = async (req, res) => {
         // Solo agregar campos opcionales si tienen valor real
         if (cuil && cuil.trim() !== '') datosCliente.cuil = cuil.trim();
         if (telefono && telefono.trim() !== '') datosCliente.telefono = telefono.trim();
+        // 👉 NUEVO: telefono2 opcional
+        if (telefono2 && telefono2.trim() !== '') datosCliente.telefono2 = telefono2.trim();
         if (email && email.trim() !== '') datosCliente.email = email.trim().toLowerCase();
         if (situacionCrediticia !== undefined && situacionCrediticia !== null && situacionCrediticia !== '') {
             datosCliente.situacionCrediticia = parseInt(situacionCrediticia, 10);
@@ -262,6 +265,8 @@ const crearVenta = async (req, res) => {
                 apellido: cliente.apellido,
                 dni: cliente.dni,
                 ...(cliente.telefono && { telefono: cliente.telefono }),
+                // 👉 NUEVO: telefono2 opcional
+                ...(cliente.telefono2 && { telefono2: cliente.telefono2 }),
                 ...(cliente.email && { email: cliente.email }),
                 direccion: cliente.direccion || ''
             });
@@ -376,8 +381,8 @@ const crearVenta = async (req, res) => {
                         timeZone: 'America/Argentina/Buenos_Aires' 
                     }));
                     cuotasGeneradas[0].metodoPago = 'efectivo';
-                    cuotasGeneradas[0].montoPagado = montoCuota; // ✅ El monto pagado es igual al valor de la cuota
-                    cuotasGeneradas[0].fechaCobro = fechaRealizadaARG; // ✅ Fecha de cobro es la fecha de la venta
+                    cuotasGeneradas[0].montoPagado = montoCuota;
+                    cuotasGeneradas[0].fechaCobro = fechaRealizadaARG;
                 }
 
                 montoTotal = montoCuota * cantidadCuotas;
@@ -393,7 +398,7 @@ const crearVenta = async (req, res) => {
                 }
 
                 if (equipoCanje.imei) {
-                    const imeiCanjeExistente = await EqupoCanjes.findOne({
+                    const imeiCanjeExistente = await EquipoCanje.findOne({
                         imei: equipoCanje.imei,
                         activo: true
                     });
@@ -451,6 +456,8 @@ const crearVenta = async (req, res) => {
                 apellido: clienteDB.apellido,
                 dni: clienteDB.dni,
                 telefono: clienteDB.telefono || '',
+                // 👉 NUEVO: telefono2 opcional
+                ...(clienteDB.telefono2 && { telefono2: clienteDB.telefono2 }),
                 email: clienteDB.email || '',
                 direccion: clienteDB.direccion || ''
             },
@@ -470,6 +477,8 @@ const crearVenta = async (req, res) => {
                 dni: garante.dni || '',
                 ...(garante.cuil && { cuil: garante.cuil }),
                 telefono: garante.telefono || '',
+                // 👉 NUEVO: telefono2 del garante opcional
+                ...(garante.telefono2 && { telefono2: garante.telefono2 }),
                 ...(garante.email && { email: garante.email }),
                 direccion: garante.direccion || ''
             } : {},
@@ -498,10 +507,11 @@ const crearVenta = async (req, res) => {
                 bateria: equipoCanje.bateria || '',
                 estado: equipoCanje.estado || 'bueno',
                 valorTasado: equipoCanje.valorTasado,
+                localidad: localidad || '',
                 fechaRecepcion: fechaRealizadaARG
             };
 
-            await EqupoCanjes.create(datosEquipoCanje);
+            await EquipoCanje.create(datosEquipoCanje);
         }
 
         return res.status(201).json({

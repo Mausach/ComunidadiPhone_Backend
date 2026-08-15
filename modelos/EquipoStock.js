@@ -29,6 +29,16 @@ const stockSchema = new Schema({
     },
     
     // ==========================================
+    // LOCALIDAD/DESTINO
+    // ==========================================
+    //NUEVO: Localidad donde está destinado el equipo
+    localidad: {
+        type: String,
+        trim: true,
+        lowercase: true
+    },
+    
+    // ==========================================
     // ESTADO DEL EQUIPO
     // ==========================================
     estado: {
@@ -58,7 +68,7 @@ const stockSchema = new Schema({
         nombre: String,
         telefono: String,
         email: String,
-        factura: String  // Número de factura
+        factura: String
     },
     
     // ==========================================

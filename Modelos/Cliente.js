@@ -36,6 +36,12 @@ const clienteSchema = new Schema({
         trim: true,
         default: null
     },
+    //telefono alternativo
+    telefono2: {
+        type: String,
+        trim: true,
+        default: null
+    },
     
     email: {
         type: String,

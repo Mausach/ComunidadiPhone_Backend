@@ -15,6 +15,7 @@ const cargarStock = async (req, res) => {
             imei,
             color,
             bateria,
+            localidad,  // 👉 NUEVO
             estado,
             precioCompra,
             precioVenta,
@@ -83,8 +84,7 @@ const cargarStock = async (req, res) => {
             }
 
             // Verificar que no exista en canjes activos
-            
-            const imeiEnCanje = await EqupoCanjes.findOne({
+            const imeiEnCanje = await EquipoCanje.findOne({
                 imei: imei,
                 activo: true
             });
@@ -106,6 +106,7 @@ const cargarStock = async (req, res) => {
             imei: imei?.trim() || '',
             color: color?.trim() || '',
             bateria: bateria?.trim() || '',
+            localidad: localidad?.trim().toLowerCase() || '',  // 👉 NUEVO
             estado: estado || 'sellado',
             precioCompra,
             precioVenta,
@@ -167,6 +168,7 @@ const editarStock = async (req, res) => {
             imei,
             color,
             bateria,
+            localidad,  // 👉 NUEVO
             estado,
             precioCompra,
             precioVenta,
@@ -278,6 +280,12 @@ const editarStock = async (req, res) => {
         if (bateria !== undefined) {
             stock.bateria = bateria?.trim() || '';
             camposActualizados.bateria = bateria?.trim() || '';
+        }
+
+        // 👉 NUEVO: Actualizar localidad
+        if (localidad !== undefined) {
+            stock.localidad = localidad?.trim().toLowerCase() || '';
+            camposActualizados.localidad = localidad?.trim().toLowerCase() || '';
         }
 
         if (estado) {
