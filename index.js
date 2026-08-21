@@ -19,7 +19,7 @@ const cron = require('node-cron');
 const { actualizarCuotasVencidas } = require('./controlador/tareasautomaticascron');
 
 // 🧪 MODO TEST: 23:25 hora Argentina
-cron.schedule('25 23 * * *', async () => {
+cron.schedule('5 0 * * *', async () => {
     console.log('🚀 [CRON] Ejecutando control automático de cuotas...');
     console.log(`⏰ [CRON] Hora de ejecución: ${new Date().toLocaleString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })}`);
 
