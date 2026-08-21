@@ -1,13 +1,13 @@
 // Rutes/EquipoCanje.js
 
 const express = require('express');
-const { listarEquiposCanje, obtenerEquipoCanjePorId, editarEquipoCanje, cambiarDisponibilidad } = require('../controlador/equiposcanje');
+const { obtenerEquipoCanjePorId, editarEquipoCanje, cambiarDisponibilidad, listarEquiposCanje } = require('../controlador/equiposcanje');
 
 
 const routerEquipoCanje = express.Router();
 
 // Listar equipos canje con filtros
-//routerEquipoCanje.get('/', listarEquiposCanje);
+routerEquipoCanje.get('/equiposcanje', listarEquiposCanje);
 
 // Obtener equipo canje por ID
 routerEquipoCanje.get('/equipcanje/:id', obtenerEquipoCanjePorId);

@@ -1,6 +1,6 @@
 // controlador/EquipoCanje.js
 
-const EquipoCanje = require('../modelos/EquipoCanje');
+const EqupoCanjes = require("../modelos/EqupoCanjes");
 const Venta = require('../modelos/Venta');
 
 // ==========================================
@@ -10,7 +10,7 @@ const obtenerEquipoCanjePorId = async (req, res) => {
     try {
         const { id } = req.params;
 
-        const equipo = await EquipoCanje.findById(id)
+        const equipo = await EqupoCanjes.findById(id)
             .populate('ventaOrigen', 'cliente fechaRealizada tipoVenta localidad');
 
         if (!equipo) {
@@ -99,18 +99,18 @@ const listarEquiposCanje = async (req, res) => {
         // CONSULTAR
         // ==========================================
         const [equipos, total] = await Promise.all([
-            EquipoCanje.find(filtros)
+            EqupoCanjes.find(filtros)
                 .sort({ fechaRecepcion: -1 })
                 .skip(skip)
                 .limit(limit)
                 .populate('ventaOrigen', 'cliente.nombre cliente.apellido cliente.dni localidad tipoVenta'),
-            EquipoCanje.countDocuments(filtros)
+            EqupoCanjes.countDocuments(filtros)
         ]);
 
         // ==========================================
         // CALCULAR RESUMEN
         // ==========================================
-        const resumen = await EquipoCanje.aggregate([
+        const resumen = await EqupoCanjes.aggregate([
             { $match: { activo: true } },
             {
                 $group: {
@@ -172,7 +172,7 @@ const editarEquipoCanje = async (req, res) => {
         // ==========================================
         // BUSCAR EQUIPO
         // ==========================================
-        const equipo = await EquipoCanje.findById(id);
+        const equipo = await EqupoCanjes.findById(id);
 
         if (!equipo) {
             return res.status(404).json({
@@ -202,7 +202,7 @@ const editarEquipoCanje = async (req, res) => {
                 });
             }
 
-            const imeiExistente = await EquipoCanje.findOne({
+            const imeiExistente = await EqupoCanjes.findOne({
                 imei: imei,
                 _id: { $ne: id },
                 activo: true
@@ -368,7 +368,6 @@ const cambiarDisponibilidad = async (req, res) => {
 // ==========================================
 module.exports = {
     obtenerEquipoCanjePorId,
-    listarEquiposCanje,
     editarEquipoCanje,
-    cambiarDisponibilidad
+    listarEquiposCanje
 };

@@ -84,7 +84,7 @@ const cargarStock = async (req, res) => {
             }
 
             // Verificar que no exista en canjes activos
-            const imeiEnCanje = await EquipoCanje.findOne({
+            const imeiEnCanje = await EqupoCanjes.findOne({
                 imei: imei,
                 activo: true
             });

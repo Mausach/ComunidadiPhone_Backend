@@ -1,11 +1,12 @@
 const Cliente = require("../modelos/Cliente");
+const EquipoStock = require("../modelos/EquipoStock");
 const EqupoCanjes = require("../modelos/EqupoCanjes");
 
 const Venta = require("../modelos/Venta");
 
 
 const crearCliente = async (req, res) => {
-    const {
+ const {
         nombre,
         apellido,
         dni,
@@ -226,6 +227,7 @@ const crearVenta = async (req, res) => {
             cantidadCuotas,
             frecuencia,
             equipoCanje,
+            equipoSeleccionado,  // 👉 NUEVO: { _id, origen }
             notas
         } = req.body;
 
@@ -255,6 +257,45 @@ const crearVenta = async (req, res) => {
         }
 
         // ==========================================
+        // 👉 VALIDAR EQUIPO SELECCIONADO (stock o canje)
+        // ==========================================
+        let equipoStockInfo = null;
+        let equipoCanjeInfo = null;
+
+        if (equipoSeleccionado && equipoSeleccionado._id) {
+            if (equipoSeleccionado.origen === 'stock') {
+                equipoStockInfo = await EquipoStock.findOne({
+                    _id: equipoSeleccionado._id,
+                    disponible: true
+                });
+
+                if (!equipoStockInfo) {
+                    return res.status(400).json({
+                        ok: false,
+                        message: 'El equipo seleccionado ya no está disponible en stock'
+                    });
+                }
+            } else if (equipoSeleccionado.origen === 'canje') {
+                equipoCanjeInfo = await EqupoCanjes.findOne({
+                    _id: equipoSeleccionado._id,
+                    activo: true
+                });
+
+                if (!equipoCanjeInfo) {
+                    return res.status(400).json({
+                        ok: false,
+                        message: 'El equipo canje seleccionado ya no está disponible'
+                    });
+                }
+            } else {
+                return res.status(400).json({
+                    ok: false,
+                    message: 'Origen de equipo no válido. Debe ser "stock" o "canje"'
+                });
+            }
+        }
+
+        // ==========================================
         // BUSCAR O CREAR CLIENTE
         // ==========================================
         let clienteDB = await Cliente.findOne({ dni: cliente.dni });
@@ -265,7 +306,6 @@ const crearVenta = async (req, res) => {
                 apellido: cliente.apellido,
                 dni: cliente.dni,
                 ...(cliente.telefono && { telefono: cliente.telefono }),
-                // 👉 NUEVO: telefono2 opcional
                 ...(cliente.telefono2 && { telefono2: cliente.telefono2 }),
                 ...(cliente.email && { email: cliente.email }),
                 direccion: cliente.direccion || ''
@@ -398,7 +438,7 @@ const crearVenta = async (req, res) => {
                 }
 
                 if (equipoCanje.imei) {
-                    const imeiCanjeExistente = await EquipoCanje.findOne({
+                    const imeiCanjeExistente = await EqupoCanjes.findOne({
                         imei: equipoCanje.imei,
                         activo: true
                     });
@@ -445,6 +485,25 @@ const crearVenta = async (req, res) => {
         // ==========================================
         // CONSTRUIR OBJETO VENTA
         // ==========================================
+        // 👉 Si se seleccionó un equipo del stock, usar sus datos
+        const datosProducto = equipoStockInfo ? {
+            nombre: equipoStockInfo.nombre,
+            modelo: equipoStockInfo.modelo || '',
+            bateria: equipoStockInfo.bateria || '',
+            color: equipoStockInfo.color || '',
+            ...(equipoStockInfo.imei && { imei: equipoStockInfo.imei }),
+            estado: equipoStockInfo.estado || 'sellado',
+            valor: producto.valor  // El valor lo define el vendedor en el front
+        } : {
+            nombre: producto.nombre,
+            modelo: producto.modelo || '',
+            bateria: producto.bateria || '',
+            color: producto.color || '',
+            ...(producto.imei && { imei: producto.imei }),
+            estado: producto.estado || 'sellado',
+            valor: producto.valor
+        };
+
         const datosVenta = {
             tipoVenta,
             fechaRealizada: fechaRealizadaARG,
@@ -456,20 +515,11 @@ const crearVenta = async (req, res) => {
                 apellido: clienteDB.apellido,
                 dni: clienteDB.dni,
                 telefono: clienteDB.telefono || '',
-                // 👉 NUEVO: telefono2 opcional
                 ...(clienteDB.telefono2 && { telefono2: clienteDB.telefono2 }),
                 email: clienteDB.email || '',
                 direccion: clienteDB.direccion || ''
             },
-            producto: {
-                nombre: producto.nombre,
-                modelo: producto.modelo || '',
-                bateria: producto.bateria || '',
-                color: producto.color || '',
-                ...(producto.imei && { imei: producto.imei }),
-                estado: producto.estado || 'sellado',
-                valor: producto.valor
-            },
+            producto: datosProducto,
             requiereGarante: requiereGarante || false,
             garante: requiereGarante && garante ? {
                 nombre: garante.nombre || '',
@@ -477,7 +527,6 @@ const crearVenta = async (req, res) => {
                 dni: garante.dni || '',
                 ...(garante.cuil && { cuil: garante.cuil }),
                 telefono: garante.telefono || '',
-                // 👉 NUEVO: telefono2 del garante opcional
                 ...(garante.telefono2 && { telefono2: garante.telefono2 }),
                 ...(garante.email && { email: garante.email }),
                 direccion: garante.direccion || ''
@@ -494,13 +543,46 @@ const crearVenta = async (req, res) => {
         const ventaGuardada = await Venta.create(datosVenta);
 
         // ==========================================
-        // GUARDAR EQUIPO CANJE SI APLICA
+        // 👉 ACTUALIZAR EQUIPO SELECCIONADO
+        // ==========================================
+        if (equipoSeleccionado && equipoSeleccionado._id) {
+            try {
+                if (equipoSeleccionado.origen === 'stock') {
+                    await EquipoStock.findByIdAndUpdate(
+                        equipoSeleccionado._id,
+                        {
+                            disponible: false,
+                            fechaVenta: fechaRealizadaARG,
+                            ventaAsociada: ventaGuardada._id
+                        }
+                    );
+                } else if (equipoSeleccionado.origen === 'canje') {
+                    await EqupoCanjes.findByIdAndUpdate(
+                        equipoSeleccionado._id,
+                        {
+                            activo: false
+                        }
+                    );
+                }
+            } catch (errorUpdateEquipo) {
+                // ⚠️ Rollback: eliminar la venta si falla la actualización del equipo
+                await Venta.findByIdAndDelete(ventaGuardada._id);
+                console.error('Error al actualizar equipo, venta eliminada:', errorUpdateEquipo);
+                
+                return res.status(500).json({
+                    ok: false,
+                    message: 'No se pudo actualizar el equipo seleccionado. Venta cancelada.'
+                });
+            }
+        }
+
+        // ==========================================
+        // GUARDAR EQUIPO CANJE SI APLICA (cuando es plan canje)
         // ==========================================
         if (tipoVenta === 'plan_canje' && equipoCanje) {
             const datosEquipoCanje = {
                 ventaOrigen: ventaGuardada._id,
                 nombre: equipoCanje.nombre,
-                marca: equipoCanje.marca || '',
                 modelo: equipoCanje.modelo || '',
                 ...(equipoCanje.imei && { imei: equipoCanje.imei }),
                 color: equipoCanje.color || '',
@@ -511,7 +593,7 @@ const crearVenta = async (req, res) => {
                 fechaRecepcion: fechaRealizadaARG
             };
 
-            await EquipoCanje.create(datosEquipoCanje);
+            await EqupoCanjes.create(datosEquipoCanje);
         }
 
         return res.status(201).json({

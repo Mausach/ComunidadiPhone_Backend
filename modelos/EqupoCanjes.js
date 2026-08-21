@@ -31,7 +31,7 @@ const equipoCanjeSchema = new Schema({
     },
     estado: {
         type: String,
-        enum: ['bueno', 'regular', 'malo', 'excelente'],
+        enum: ['sellado', 'semi nuevo', 'reacondicionado', 'bueno', 'regular', 'malo'],
         default: 'bueno'
     },
     valorTasado: {

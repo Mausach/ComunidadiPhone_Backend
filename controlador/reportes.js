@@ -1,3 +1,4 @@
+const EquipoStock = require("../modelos/EquipoStock");
 const EqupoCanjes = require("../modelos/EqupoCanjes");
 const Venta = require("../modelos/Venta");
 
@@ -622,6 +623,7 @@ const reporteEquiposCanjeados = async (req, res) => {
                     color: 1,
                     bateria: 1,
                     estado: 1,
+                    localidad: 1, // 🆕 AGREGAR ESTA LÍNEA
                     valorTasado: 1,
                     fechaRecepcion: 1,
                     notas: 1,
@@ -690,8 +692,182 @@ const reporteEquiposCanjeados = async (req, res) => {
     }
 };
 
+// ==========================================
+// 📋 LISTAR EQUIPOS DISPONIBLES (Stock + Canje)
+// ==========================================
+const listarEquiposDisponibles = async (req, res) => {
+    try {
+        const {
+            localidad,
+            nombre,
+            modelo,
+            imei,
+            estado,
+            origen,     // 'stock', 'canje', o vacío para todos
+            pagina = 1,
+            limite = 20
+        } = req.query;
+
+        // ==========================================
+        // PAGINACIÓN
+        // ==========================================
+        const skip = (parseInt(pagina) - 1) * parseInt(limite);
+        const limit = parseInt(limite);
+
+        // ==========================================
+        // CONSTRUIR FILTROS BASE
+        // ==========================================
+        const filtrosStock = { disponible: true };
+        const filtrosCanje = { activo: true };
+
+        // 👉 Filtro por localidad
+        if (localidad) {
+            const localidadNormalizada = localidad.toLowerCase().trim();
+            filtrosStock.localidad = localidadNormalizada;
+            filtrosCanje.localidad = localidadNormalizada;
+        }
+
+        // 👉 Filtro por nombre (búsqueda parcial)
+        if (nombre) {
+            filtrosStock.nombre = { $regex: nombre, $options: 'i' };
+            filtrosCanje.nombre = { $regex: nombre, $options: 'i' };
+        }
+
+        // 👉 Filtro por modelo
+        if (modelo) {
+            filtrosStock.modelo = { $regex: modelo, $options: 'i' };
+            filtrosCanje.modelo = { $regex: modelo, $options: 'i' };
+        }
+
+        // 👉 Filtro por IMEI
+        if (imei) {
+            filtrosStock.imei = { $regex: imei, $options: 'i' };
+            filtrosCanje.imei = { $regex: imei, $options: 'i' };
+        }
+
+        // 👉 Filtro por estado
+        if (estado) {
+            filtrosStock.estado = estado;
+            filtrosCanje.estado = estado;
+        }
+
+        // ==========================================
+        // CONSULTAR SEGÚN ORIGEN
+        // ==========================================
+        let equiposStock = [];
+        let equiposCanje = [];
+        let totalStock = 0;
+        let totalCanje = 0;
+
+        // Si no se especifica origen o es 'stock'
+        if (!origen || origen === 'stock') {
+            const [stockData, totalStockData] = await Promise.all([
+                EquipoStock.find(filtrosStock)
+                    .sort({ fechaIngreso: -1 })
+                    .skip(skip)
+                    .limit(limit)
+                    .lean(),
+                EquipoStock.countDocuments(filtrosStock)
+            ]);
+
+            equiposStock = stockData;
+            totalStock = totalStockData;
+        }
+
+        // Si no se especifica origen o es 'canje'
+        if (!origen || origen === 'canje') {
+            const [canjeData, totalCanjeData] = await Promise.all([
+                EqupoCanjes.find(filtrosCanje)
+                    .sort({ fechaRecepcion: -1 })
+                    .skip(skip)
+                    .limit(limit)
+                    .lean(),
+                EqupoCanjes.countDocuments(filtrosCanje)
+            ]);
+
+            equiposCanje = canjeData;
+            totalCanje = totalCanjeData;
+        }
+
+        // ==========================================
+        // FORMATEAR RESPUESTA
+        // ==========================================
+        const equiposFormateados = [
+            // Stock
+            ...equiposStock.map(equipo => ({
+                _id: equipo._id,
+                origen: 'stock',
+                nombre: equipo.nombre,
+                modelo: equipo.modelo || '',
+                imei: equipo.imei || '',
+                color: equipo.color || '',
+                bateria: equipo.bateria || '',
+                estado: equipo.estado,
+                localidad: equipo.localidad || '',
+                // Datos específicos de stock
+                precioVenta: equipo.precioVenta,
+                precioCompra: equipo.precioCompra,
+                disponible: equipo.disponible,
+                fechaIngreso: equipo.fechaIngreso
+            })),
+            // Canje
+            ...equiposCanje.map(equipo => ({
+                _id: equipo._id,
+                origen: 'canje',
+                nombre: equipo.nombre,
+                modelo: equipo.modelo || '',
+                imei: equipo.imei || '',
+                color: equipo.color || '',
+                bateria: equipo.bateria || '',
+                estado: equipo.estado,
+                localidad: equipo.localidad || '',
+                // Datos específicos de canje
+                valorTasado: equipo.valorTasado,
+                activo: equipo.activo,
+                fechaRecepcion: equipo.fechaRecepcion
+            }))
+        ];
+
+        // Ordenar por fecha (más recientes primero)
+        equiposFormateados.sort((a, b) => {
+            const fechaA = a.fechaIngreso || a.fechaRecepcion;
+            const fechaB = b.fechaIngreso || b.fechaRecepcion;
+            return new Date(fechaB) - new Date(fechaA);
+        });
+
+        const total = totalStock + totalCanje;
+
+        return res.status(200).json({
+            ok: true,
+            message: 'Equipos disponibles encontrados',
+            data: {
+                equipos: equiposFormateados,
+                resumen: {
+                    total,
+                    totalStock,
+                    totalCanje
+                },
+                paginacion: {
+                    total,
+                    pagina: parseInt(pagina),
+                    limite: limit,
+                    totalPaginas: Math.ceil(total / limit)
+                }
+            }
+        });
+
+    } catch (error) {
+        console.error('Error al listar equipos disponibles:', error);
+        return res.status(500).json({
+            ok: false,
+            message: `Error al listar equipos disponibles: ${error.message}`
+        });
+    }
+};
+
 module.exports = {
     reporteCobranzaMensual,
     historialCuotasPorVenta,
-    reporteEquiposCanjeados
+    reporteEquiposCanjeados,
+    listarEquiposDisponibles
 };

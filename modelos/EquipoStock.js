@@ -43,7 +43,7 @@ const stockSchema = new Schema({
     // ==========================================
     estado: {
         type: String,
-        enum: ['nuevo', 'sellado', 'semi nuevo', 'reacondicionado', 'exhibicion'],
+        enum: ['sellado', 'semi nuevo', 'reacondicionado', 'exhibicion', 'bueno', 'regular', 'malo'],
         default: 'sellado'
     },
     

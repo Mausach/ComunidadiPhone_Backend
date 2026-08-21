@@ -79,7 +79,7 @@ const ventaSchema = new Schema({
         },
         estado: {
             type: String,
-            enum: ['sellado', 'semi nuevo', 'reacondicionado', 'exhibicion'],
+            enum: ['sellado', 'semi nuevo', 'reacondicionado', 'exhibicion', 'bueno', 'regular', 'malo'],
             default: 'sellado'
         },
         valor: {
