@@ -43,7 +43,7 @@ cron.schedule('25 23 * * *', async () => {
 
 console.log('🧪 [CRON] MODO TEST: Programado para las 22:30 (hora Argentina)');
 
-
+/*
 // ==========================================
 // 🔄 KEEP ALIVE - Anti-sueño de Render
 // ==========================================
@@ -75,7 +75,7 @@ app.get('/api/health', (req, res) => {
         timestamp: new Date()
     });
 });
-
+*/
 
 //cors
 app.use(cors());
