@@ -865,9 +865,152 @@ const listarEquiposDisponibles = async (req, res) => {
     }
 };
 
+const listarVentasContado = async (req, res) => {
+    try {
+        const {
+            dni,
+            nombre,
+            fechaDesde,
+            fechaHasta,
+            localidad,
+            tipoVenta,
+            vendedor,
+            pagina = 1,
+            limite = 20
+        } = req.query;
+
+        // ==========================================
+        // CONSTRUIR FILTROS
+        // ==========================================
+        const filtros = {
+            estado: true,
+            // 👉 Solo ventas SIN cuotas
+            $or: [
+                { cuotas: { $exists: false } },  // No tiene el campo cuotas
+                { cuotas: { $size: 0 } }          // O tiene array vacío
+            ]
+        };
+
+        // Filtro por DNI
+        if (dni) {
+            filtros['cliente.dni'] = dni.trim();
+        }
+
+        // Filtro por nombre (búsqueda parcial)
+        if (nombre) {
+            filtros['cliente.nombre'] = { $regex: nombre.trim(), $options: 'i' };
+        }
+
+        // Filtro por localidad
+        if (localidad) {
+            filtros.localidad = localidad.toLowerCase().trim();
+        }
+
+        // Filtro por tipo de venta
+        if (tipoVenta) {
+            filtros.tipoVenta = tipoVenta;
+        }
+
+        // Filtro por vendedor
+        if (vendedor) {
+            filtros.vendedor = { $regex: vendedor, $options: 'i' };
+        }
+
+        // ==========================================
+        // FILTRO POR FECHA DE VENTA
+        // ==========================================
+        if (fechaDesde || fechaHasta) {
+            filtros.fechaRealizada = {};
+            if (fechaDesde) {
+                filtros.fechaRealizada.$gte = new Date(fechaDesde + 'T00:00:00-03:00');
+            }
+            if (fechaHasta) {
+                filtros.fechaRealizada.$lte = new Date(fechaHasta + 'T23:59:59-03:00');
+            }
+        }
+
+        // ==========================================
+        // CALCULAR PAGINACIÓN
+        // ==========================================
+        const skip = (parseInt(pagina) - 1) * parseInt(limite);
+        const limit = parseInt(limite);
+
+        // ==========================================
+        // CONSULTAR
+        // ==========================================
+        const [ventas, total] = await Promise.all([
+            Venta.find(filtros)
+                .select('cliente producto localidad tipoVenta fechaRealizada vendedor montoTotal montoPagado pagos notas estado')
+                .sort({ fechaRealizada: -1 })
+                .skip(skip)
+                .limit(limit)
+                .lean(),
+            Venta.countDocuments(filtros)
+        ]);
+
+        // ==========================================
+        // FORMATEAR RESPUESTA
+        // ==========================================
+        const ventasFormateadas = ventas.map(venta => {
+            // Calcular monto pendiente
+            const montoPendiente = (venta.montoTotal || 0) - (venta.montoPagado || 0);
+
+            // Total de pagos realizados
+            const totalPagos = (venta.pagos || []).reduce((sum, p) => sum + p.monto, 0);
+
+            return {
+                _id: venta._id,
+                cliente: venta.cliente,
+                producto: venta.producto,
+                localidad: venta.localidad,
+                tipoVenta: venta.tipoVenta,
+                fechaRealizada: venta.fechaRealizada,
+                vendedor: venta.vendedor || '',
+                montoTotal: venta.montoTotal,
+                montoPagado: venta.montoPagado || 0,
+                montoPendiente,
+                totalPagos,
+                cantidadPagos: (venta.pagos || []).length,
+                pagos: (venta.pagos || []).map(p => ({
+                    monto: p.monto,
+                    metodo: p.metodo,
+                    fecha: p.fecha
+                })),
+                notas: (venta.notas || []).map(n => ({
+                    texto: n.texto,
+                    tipo: n.tipo,
+                    fecha: n.fecha,
+                    usuario: n.usuario?.nombre || ''
+                })),
+                estado: venta.estado
+            };
+        });
+
+        return res.status(200).json({
+            ok: true,
+            message: 'Ventas de contado encontradas',
+            data: ventasFormateadas,
+            paginacion: {
+                total,
+                pagina: parseInt(pagina),
+                limite: limit,
+                paginas: Math.ceil(total / limit)
+            }
+        });
+
+    } catch (error) {
+        console.error('Error al listar ventas de contado:', error);
+        return res.status(500).json({
+            ok: false,
+            message: `Error al listar ventas de contado: ${error.message}`
+        });
+    }
+};
+
 module.exports = {
     reporteCobranzaMensual,
     historialCuotasPorVenta,
     reporteEquiposCanjeados,
-    listarEquiposDisponibles
+    listarEquiposDisponibles,
+    listarVentasContado
 };

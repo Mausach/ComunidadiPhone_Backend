@@ -1,7 +1,7 @@
 const express = require('express');
 const { check } = require('express-validator');
 
-const { reporteCobranzaMensual, historialCuotasPorVenta, reporteEquiposCanjeados, listarEquiposDisponibles } = require('../controlador/reportes');
+const { reporteCobranzaMensual, historialCuotasPorVenta, reporteEquiposCanjeados, listarEquiposDisponibles, listarVentasContado } = require('../controlador/reportes');
 const { validarCampos } = require('../midelwaresdefin/ValidarCampos');
 
 
@@ -33,5 +33,7 @@ routerReporteCobranza.get('/equipos-canjeados',
 //esto se usara en ventas y ceo
 // Listar equipos disponibles (stock + canje)
 routerReporteCobranza.get('/equipos-disp', listarEquiposDisponibles);
+
+routerReporteCobranza.get('/ventas-contado', listarVentasContado);
 
 module.exports = routerReporteCobranza;
