@@ -138,6 +138,9 @@ app.use("/rep_ceo", require('./Rutes/Reportes'))
 app.use("/inv", require('./Rutes/Stock'))
 
 //para los equiposde stock o inventario
+app.use("/inve", require('./Rutes/Stockunico'))
+
+//para los equiposde stock o inventario
 app.use("/canje", require('./Rutes/Canjes'))
 
 //para el cron de actualización automática

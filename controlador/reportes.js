@@ -1,6 +1,10 @@
+
+const Equipos = require("../modelos/Equipos");
 const EquipoStock = require("../modelos/EquipoStock");
 const EqupoCanjes = require("../modelos/EqupoCanjes");
+const Gastos = require("../modelos/Gastos");
 const Venta = require("../modelos/Venta");
+const Cliente = require("../modelos/Cliente");
 
 // Reporte de cobranza mensual
 
@@ -176,24 +180,24 @@ const reporteCobranzaMensual = async (req, res) => {
             totalRecargos: resultado.reduce((sum, c) => sum + c.totalRecargos, 0),
             totalCobrado: resultado.reduce((sum, c) => sum + c.montoPagado, 0),
             totalPendiente: resultado.reduce((sum, c) => sum + c.saldoPendiente, 0),
-            
+
             // Estado de cuotas
             cuotasPagadas: resultado.filter(c => c.estadoCuota === 'pagada').length,
             cuotasPagoParcial: resultado.filter(c => c.estadoCuota === 'pago parcial').length,
             cuotasPendientes: resultado.filter(c => c.estadoCuota === 'pendiente').length,
             cuotasNoPagadas: resultado.filter(c => c.estadoCuota === 'no pagada').length,
-            
+
             // Información de recargos
             cuotasConRecargos: resultado.filter(c => c.cantidadRecargos > 0).length,
             totalRecargosPendientes: resultado
                 .filter(c => c.estadoCuota !== 'pagada')
                 .reduce((sum, c) => sum + c.totalRecargos, 0),
-            
+
             // Eficiencia de cobranza
-            eficienciaCobranza: resultado.length > 0 
+            eficienciaCobranza: resultado.length > 0
                 ? ((resultado.filter(c => c.estadoCuota === 'pagada').length / resultado.length) * 100).toFixed(2)
                 : 0,
-            
+
             // Monto promedio con recargos
             promedioCuota: resultado.length > 0
                 ? (resultado.reduce((sum, c) => sum + c.totalCuota, 0) / resultado.length).toFixed(2)
@@ -288,7 +292,7 @@ const historialCuotasPorVenta = async (req, res) => {
                     montoTotal: { $first: '$montoTotal' },
                     conducta_pago: { $first: '$conducta_pago' },
                     totalCuotas: { $sum: 1 },
-                    
+
                     // Contadores por estado
                     cuotasPagadas: {
                         $sum: {
@@ -310,13 +314,13 @@ const historialCuotasPorVenta = async (req, res) => {
                             $cond: [{ $eq: ['$cuotas.estado_cuota', 'no pagada'] }, 1, 0]
                         }
                     },
-                    
+
                     // Montos de capital
                     totalCapital: { $sum: '$cuotas.montoCuota' },
-                    
+
                     // Recargos totales generados en la venta
                     totalRecargosGenerados: { $sum: '$cuotas.totalRecargos' },
-                    
+
                     // Recargos cobrados (de cuotas pagadas o parciales)
                     totalRecargosCobrados: {
                         $sum: {
@@ -327,7 +331,7 @@ const historialCuotasPorVenta = async (req, res) => {
                             ]
                         }
                     },
-                    
+
                     // Recargos pendientes
                     totalRecargosPendientes: {
                         $sum: {
@@ -343,22 +347,22 @@ const historialCuotasPorVenta = async (req, res) => {
                             ]
                         }
                     },
-                    
+
                     // Monto pagado real (incluye recargos)
                     montoPagado: {
                         $sum: { $ifNull: ['$cuotas.montoPagado', 0] }
                     },
-                    
+
                     // Total real de la venta (capital + recargos)
                     totalReal: {
                         $sum: '$cuotas.totalCuota'
                     },
-                    
+
                     // Saldo pendiente real
                     saldoPendienteReal: {
                         $sum: '$cuotas.saldoPendiente'
                     },
-                    
+
                     // Conteo de cuotas con recargos
                     cuotasConRecargos: {
                         $sum: {
@@ -369,7 +373,7 @@ const historialCuotasPorVenta = async (req, res) => {
                             ]
                         }
                     },
-                    
+
                     // Detalle de cuotas con recargos
                     detalleCuotas: {
                         $push: {
@@ -457,14 +461,14 @@ const historialCuotasPorVenta = async (req, res) => {
                     montoTotal: 1,
                     conducta_pago: 1,
                     totalCuotas: 1,
-                    
+
                     // Estados
                     cuotasPagadas: 1,
                     cuotasPagoParcial: 1,
                     cuotasPendientes: 1,
                     cuotasNoPagadas: 1,
                     cuotasConRecargos: 1,
-                    
+
                     // Montos
                     totalCapital: 1,
                     totalRecargosGenerados: 1,
@@ -473,12 +477,12 @@ const historialCuotasPorVenta = async (req, res) => {
                     montoPagado: 1,
                     totalReal: 1,
                     saldoPendienteReal: 1,
-                    
+
                     // Métricas
                     porcentajeCobrado: 1,
                     porcentajeRecargosCobrados: 1,
                     eficienciaCobranza: 1,
-                    
+
                     // Detalle
                     detalleCuotas: 1
                 }
@@ -865,6 +869,162 @@ const listarEquiposDisponibles = async (req, res) => {
     }
 };
 
+const listarEquiposDisponibles2 = async (req, res) => {
+    try {
+        const {
+            localidad,
+            nombre,
+            modelo,
+            capacidad,
+            imei,
+            estado,
+            origen,     // 'stock', 'canje', o vacío para todos
+            pagina = 1,
+            limite = 50
+        } = req.query;
+
+        // ==========================================
+        // PAGINACIÓN
+        // ==========================================
+        const skip = (parseInt(pagina) - 1) * parseInt(limite);
+        const limit = parseInt(limite);
+
+        // ==========================================
+        // CONSTRUIR FILTROS BASE
+        // ==========================================
+        const filtros = { disponible: true };  // 👉 Solo disponibles
+
+        // 👉 Filtro por origen (si se especifica)
+        if (origen && origen !== '') {
+            filtros.origen = origen;
+        }
+
+        // 👉 Filtro por localidad
+        if (localidad) {
+            filtros.localidad = localidad.toLowerCase().trim();
+        }
+
+        // 👉 Filtro por nombre (búsqueda parcial)
+        if (nombre) {
+            filtros.nombre = { $regex: nombre, $options: 'i' };
+        }
+
+        // 👉 Filtro por modelo
+        if (modelo) {
+            filtros.modelo = { $regex: modelo, $options: 'i' };
+        }
+
+        // 👉 Filtro por capacidad
+        if (capacidad) {
+            filtros.capacidad = { $regex: capacidad, $options: 'i' };
+        }
+
+        // 👉 Filtro por IMEI
+        if (imei) {
+            filtros.imei = { $regex: imei, $options: 'i' };
+        }
+
+        // 👉 Filtro por estado
+        if (estado) {
+            filtros.estado = estado;
+        }
+
+        // ==========================================
+        // CONSULTAR
+        // ==========================================
+        const [equipos, total] = await Promise.all([
+            Equipos.find(filtros)
+                .sort({ fechaIngreso: -1 })
+                .skip(skip)
+                .limit(limit)
+                .lean(),
+            Equipos.countDocuments(filtros)
+        ]);
+
+     
+
+        // ==========================================
+        // CALCULAR RESUMEN (por origen)
+        // ==========================================
+        const resumen = await Equipos.aggregate([
+            { $match: { disponible: true } },
+            {
+                $group: {
+                    _id: '$origen',
+                    cantidad: { $sum: 1 },
+                    totalVenta: { $sum: '$precioVenta' },
+                    totalTasado: { $sum: '$valorTasado' }
+                }
+            }
+        ]);
+
+
+
+        const resumenStock = resumen.find(r => r._id === 'stock') || { cantidad: 0, totalVenta: 0 };
+        const resumenCanje = resumen.find(r => r._id === 'canje') || { cantidad: 0, totalTasado: 0 };
+
+        // ==========================================
+        // FORMATEAR RESPUESTA
+        // ==========================================
+        const equiposFormateados = equipos.map(equipo => ({
+            _id: equipo._id,
+            origen: equipo.origen,
+            nombre: equipo.nombre,
+            modelo: equipo.modelo || '',
+            capacidad: equipo.capacidad || '',
+            imei: equipo.imei || '',
+            color: equipo.color || '',
+            bateria: equipo.bateria || '',
+            estado: equipo.estado,
+            localidad: equipo.localidad || '',
+            // Datos según origen
+            precioVenta: equipo.origen === 'stock' ? equipo.precioVenta : 0,
+            precioCompra: equipo.origen === 'stock' ? equipo.precioCompra : 0,
+            valorTasado: equipo.origen === 'canje' ? equipo.valorTasado : 0,
+            disponible: equipo.disponible,
+            fechaIngreso: equipo.fechaIngreso,
+            fechaRecepcion: equipo.fechaRecepcion
+        }));
+
+        // ==========================================
+        // PAGINACIÓN
+        // ==========================================
+        const totalPaginas = Math.ceil(total / limit);
+        const hayMas = parseInt(pagina) < totalPaginas;
+        const restantes = Math.max(0, total - (parseInt(pagina) * limit));
+
+        return res.status(200).json({
+            ok: true,
+            message: 'Equipos disponibles encontrados',
+            data: {
+                equipos: equiposFormateados,
+                resumen: {
+                    total,
+                    totalStock: resumenStock.cantidad,
+                    totalCanje: resumenCanje.cantidad,
+                    valorStock: resumenStock.totalVenta,
+                    valorCanje: resumenCanje.totalTasado
+                },
+                paginacion: {
+                    total,
+                    pagina: parseInt(pagina),
+                    limite: limit,
+                    totalPaginas,
+                    hayMas,
+                    restantes
+                }
+            }
+        });
+
+    } catch (error) {
+        console.error('Error al listar equipos disponibles:', error);
+        return res.status(500).json({
+            ok: false,
+            message: `Error al listar equipos disponibles: ${error.message}`
+        });
+    }
+};
+
 const listarVentasContado = async (req, res) => {
     try {
         const {
@@ -1007,10 +1167,1160 @@ const listarVentasContado = async (req, res) => {
     }
 };
 
+//para el panel de reportes de 5 solapas
+
+
+// ==========================================
+// 📊 RESUMEN GENERAL PARA DASHBOARD
+// ==========================================
+const resumenGeneral = async (req, res) => {
+    try {
+        // ==========================================
+        // 1. VENTAS TOTALES Y POR TIPO
+        // ==========================================
+        const ventasTotales = await Venta.countDocuments({ estado: true });
+
+        const ventasPorTipo = await Venta.aggregate([
+            { $match: { estado: true } },
+            {
+                $group: {
+                    _id: '$tipoVenta',
+                    cantidad: { $sum: 1 }
+                }
+            }
+        ]);
+
+        // Formatear ventas por tipo
+        const ventasTipo = {
+            contado: 0,
+            plan_canje: 0,
+            sistema1: 0,
+            sistema2: 0
+        };
+
+        ventasPorTipo.forEach(v => {
+            if (ventasTipo.hasOwnProperty(v._id)) {
+                ventasTipo[v._id] = v.cantidad;
+            }
+        });
+
+        // ==========================================
+        // 2. MONTOS PAGADOS
+        // ==========================================
+        const montosPagados = await Venta.aggregate([
+            { $match: { estado: true } },
+            {
+                $group: {
+                    _id: null,
+                    totalMontoPagadoVentas: { $sum: '$montoPagado' },
+                    totalMontoTotalVentas: { $sum: '$montoTotal' }
+                }
+            }
+        ]);
+
+        const totalesMontos = montosPagados[0] || { totalMontoPagadoVentas: 0, totalMontoTotalVentas: 0 };
+
+        // Suma de cuotas pagadas (estado 'pagada')
+        const cuotasPagadas = await Venta.aggregate([
+            { $match: { estado: true } },
+            { $unwind: '$cuotas' },
+            { $match: { 'cuotas.estado_cuota': 'pagada' } },
+            {
+                $group: {
+                    _id: null,
+                    totalMontoCuotasPagadas: { $sum: '$cuotas.montoPagado' },
+                    cantidadCuotasPagadas: { $sum: 1 }
+                }
+            }
+        ]);
+
+        const totalesCuotasPagadas = cuotasPagadas[0] || { totalMontoCuotasPagadas: 0, cantidadCuotasPagadas: 0 };
+
+        // ==========================================
+        // 3. MONTOS POR MÉTODO DE PAGO (separados)
+        // ==========================================
+        // Métodos de pagos iniciales (ventas)
+        const metodosPagosIniciales = await Venta.aggregate([
+            { $match: { estado: true } },
+            { $unwind: '$pagos' },
+            {
+                $group: {
+                    _id: '$pagos.metodo',
+                    total: { $sum: '$pagos.monto' }
+                }
+            }
+        ]);
+
+        // Métodos de pago de cuotas
+        const metodosPagosCuotas = await Venta.aggregate([
+            { $match: { estado: true } },
+            { $unwind: '$cuotas' },
+            { $match: { 'cuotas.estado_cuota': 'pagada' } },
+            {
+                $group: {
+                    _id: '$cuotas.metodoPago',
+                    total: { $sum: '$cuotas.montoPagado' }
+                }
+            }
+        ]);
+
+        // Combinar métodos de pago
+        const metodosCombinados = {};
+
+        metodosPagosIniciales.forEach(m => {
+            if (m._id && m._id !== null) {
+                metodosCombinados[m._id] = (metodosCombinados[m._id] || 0) + m.total;
+            }
+        });
+
+        metodosPagosCuotas.forEach(m => {
+            if (m._id && m._id !== null) {
+                metodosCombinados[m._id] = (metodosCombinados[m._id] || 0) + m.total;
+            }
+        });
+
+        // ==========================================
+        // 4. CUOTAS POR COBRAR (solo pendientes)
+        // ==========================================
+        const cuotasPendientes = await Venta.aggregate([
+            { $match: { estado: true } },
+            { $unwind: '$cuotas' },
+            { $match: { 'cuotas.estado_cuota': 'pendiente' } },
+            {
+                $group: {
+                    _id: null,
+                    totalMontoPendiente: { $sum: '$cuotas.montoCuota' },
+                    cantidadCuotasPendientes: { $sum: 1 }
+                }
+            }
+        ]);
+
+        const totalesCuotasPendientes = cuotasPendientes[0] || { totalMontoPendiente: 0, cantidadCuotasPendientes: 0 };
+
+        // ==========================================
+        // 5. EQUIPOS VENDIDOS (disponible: false)
+        // ==========================================
+        const equiposVendidos = await Equipos.aggregate([
+            { $match: { disponible: false } },
+            {
+                $group: {
+                    _id: '$origen',
+                    cantidad: { $sum: 1 },
+                    totalPrecioCompra: {
+                        $sum: { $cond: [{ $eq: ['$origen', 'stock'] }, '$precioCompra', 0] }
+                    },
+                    totalValorTasado: {
+                        $sum: { $cond: [{ $eq: ['$origen', 'canje'] }, '$valorTasado', 0] }
+                    }
+                }
+            }
+        ]);
+
+        const vendidosStock = equiposVendidos.find(e => e._id === 'stock') || { cantidad: 0, totalPrecioCompra: 0 };
+        const vendidosCanje = equiposVendidos.find(e => e._id === 'canje') || { cantidad: 0, totalValorTasado: 0 };
+
+        // Cantidad total de equipos en stock (todos)
+        const totalEquiposStock = await Equipos.countDocuments();
+
+        // ==========================================
+        // 6. TOTAL DE GASTOS GENERALES
+        // ==========================================
+        const gastosTotales = await Gastos.aggregate([
+            {
+                $group: {
+                    _id: null,
+                    totalGastos: { $sum: '$Monto_gasto' }
+                }
+            }
+        ]);
+
+        const totalGastos = gastosTotales[0]?.totalGastos || 0;
+
+        // ==========================================
+        // 7. CALCULAR TOTAL GENERAL PAGADO (ventas + cuotas)
+        // ==========================================
+        const totalPagadoGeneral = totalesMontos.totalMontoPagadoVentas + totalesCuotasPagadas.totalMontoCuotasPagadas;
+
+        // ==========================================
+        // RESPUESTA
+        // ==========================================
+        return res.status(200).json({
+            ok: true,
+            message: 'Resumen general obtenido exitosamente',
+            data: {
+                // Ventas
+                ventas: {
+                    totalVentas: ventasTotales,
+                    porTipo: {
+                        contado: ventasTipo.contado,
+                        plan_canje: ventasTipo.plan_canje,
+                        sistema1: ventasTipo.sistema1,
+                        sistema2: ventasTipo.sistema2
+                    }
+                },
+
+                // Montos
+                montos: {
+                    totalMontoPagadoVentas: totalesMontos.totalMontoPagadoVentas,
+                    totalMontoTotalVentas: totalesMontos.totalMontoTotalVentas,
+                    totalMontoCuotasPagadas: totalesCuotasPagadas.totalMontoCuotasPagadas,
+                    totalPagadoGeneral,
+                    porMetodoPago: metodosCombinados
+                },
+
+                // Cuotas
+                cuotas: {
+                    porCobrarMonto: totalesCuotasPendientes.totalMontoPendiente,
+                    porCobrarCantidad: totalesCuotasPendientes.cantidadCuotasPendientes,
+                    pagadasMonto: totalesCuotasPagadas.totalMontoCuotasPagadas,
+                    pagadasCantidad: totalesCuotasPagadas.cantidadCuotasPagadas
+                },
+
+                // Equipos
+                equipos: {
+                    totalEquiposStock: totalEquiposStock,
+                    vendidos: {
+                        totalVendidos: vendidosStock.cantidad + vendidosCanje.cantidad,
+                        stockCantidad: vendidosStock.cantidad,
+                        canjeCantidad: vendidosCanje.cantidad,
+                        stockPrecioCompra: vendidosStock.totalPrecioCompra,
+                        canjeValorTasado: vendidosCanje.totalValorTasado,
+                        costoTotalVendidos: vendidosStock.totalPrecioCompra + vendidosCanje.totalValorTasado
+                    }
+                },
+
+                // Gastos
+                gastos: {
+                    totalGastosGenerales: totalGastos
+                }
+            }
+        });
+
+    } catch (error) {
+        console.error('Error al obtener resumen general:', error);
+        return res.status(500).json({
+            ok: false,
+            message: `Error al obtener resumen general: ${error.message}`
+        });
+    }
+};
+
+
+// ==========================================
+// 📊 REPORTE DE VENTAS DIRECTAS Y PLAN CANJE
+// ==========================================
+const reporteVentasDirectasCanje = async (req, res) => {
+    try {
+        // ==========================================
+        // 1. VENTAS POR TIPO (contado y plan_canje)
+        // ==========================================
+        const ventasPorTipo = await Venta.aggregate([
+            { 
+                $match: { 
+                    estado: true,
+                    tipoVenta: { $in: ['contado', 'plan_canje'] }
+                } 
+            },
+            {
+                $group: {
+                    _id: '$tipoVenta',
+                    cantidad: { $sum: 1 },
+                    totalMontoPagado: { $sum: '$montoPagado' },
+                    totalDescuentos: { $sum: { $sum: '$descuentos.monto' } }
+                }
+            }
+        ]);
+
+        // Extraer resultados
+        const ventasContado = ventasPorTipo.find(v => v._id === 'contado') || { cantidad: 0, totalMontoPagado: 0, totalDescuentos: 0 };
+        const ventasPlanCanje = ventasPorTipo.find(v => v._id === 'plan_canje') || { cantidad: 0, totalMontoPagado: 0, totalDescuentos: 0 };
+
+        // ==========================================
+        // 2. VALOR TASADO DE EQUIPOS CANJE DISPONIBLES
+        // ==========================================
+        const valorTasadoCanjes = await Equipos.aggregate([
+            { 
+                $match: { 
+                    origen: 'canje',
+                    ventaOrigen: { $ne: null },
+                    disponible: true
+                } 
+            },
+            {
+                $group: {
+                    _id: null,
+                    totalValorTasado: { $sum: '$valorTasado' },
+                    cantidadEquiposCanje: { $sum: 1 }
+                }
+            }
+        ]);
+
+        const totalValorTasado = valorTasadoCanjes[0]?.totalValorTasado || 0;
+        const cantidadCanjeDisponibles = valorTasadoCanjes[0]?.cantidadEquiposCanje || 0;
+
+        // ==========================================
+        // 3. LISTAR TODAS LAS VENTAS (contado + plan_canje)
+        // ==========================================
+        const ventas = await Venta.find({
+            estado: true,
+            tipoVenta: { $in: ['contado', 'plan_canje'] }
+        })
+        .select('cliente localidad tipoVenta fechaRealizada fechaEntrega vendedor producto montoTotal montoPagado descuentos pagos notas conducta_pago')
+        .sort({ fechaRealizada: -1 })
+        .lean();
+
+        // ==========================================
+        // 3.1 BUSCAR EQUIPOS CANJE ASOCIADOS A CADA VENTA
+        // ==========================================
+        const equiposCanje = await Equipos.find({
+            origen: 'canje',
+            ventaOrigen: { $ne: null }
+        })
+        .select('ventaOrigen nombre modelo capacidad valorTasado estado')
+        .lean();
+
+        // Crear mapa de equipos canje por ventaOrigen
+        const mapaEquiposCanje = {};
+        equiposCanje.forEach(equipo => {
+            const ventaId = equipo.ventaOrigen.toString();
+            if (!mapaEquiposCanje[ventaId]) {
+                mapaEquiposCanje[ventaId] = [];
+            }
+            mapaEquiposCanje[ventaId].push({
+                nombre: equipo.nombre,
+                modelo: equipo.modelo || '',
+                capacidad: equipo.capacidad || '',
+                valorTasado: equipo.valorTasado,
+                estado: equipo.estado || ''
+            });
+        });
+
+        // ==========================================
+        // 3.2 METODOS DE PAGO POR VENTA
+        // ==========================================
+        const metodosPagoTotales = {};
+
+        // Formatear ventas con datos calculados
+        const ventasFormateadas = ventas.map(venta => {
+            const totalDescuentos = (venta.descuentos || []).reduce((sum, d) => sum + d.monto, 0);
+            const totalPagos = (venta.pagos || []).reduce((sum, p) => sum + p.monto, 0);
+
+            // Obtener equipos canje asociados a esta venta
+            const equiposCanjeVenta = mapaEquiposCanje[venta._id.toString()] || [];
+            const totalValorTasadoVenta = equiposCanjeVenta.reduce((sum, eq) => sum + eq.valorTasado, 0);
+
+            // Acumular métodos de pago
+            (venta.pagos || []).forEach(pago => {
+                const metodo = pago.metodo || 'otro';
+                if (!metodosPagoTotales[metodo]) {
+                    metodosPagoTotales[metodo] = 0;
+                }
+                metodosPagoTotales[metodo] += pago.monto;
+            });
+
+            return {
+                _id: venta._id,
+                cliente: venta.cliente,
+                localidad: venta.localidad,
+                tipoVenta: venta.tipoVenta,
+                fechaRealizada: venta.fechaRealizada,
+                fechaEntrega: venta.fechaEntrega || null,
+                vendedor: venta.vendedor || '',
+                producto: venta.producto,
+                montoTotal: venta.montoTotal,
+                montoPagado: venta.montoPagado || 0,
+                montoPendiente: venta.montoTotal - (venta.montoPagado || 0),
+                totalDescuentos,
+                totalPagos,
+                cantidadPagos: (venta.pagos || []).length,
+                pagos: (venta.pagos || []).map(p => ({
+                    monto: p.monto,
+                    metodo: p.metodo,
+                    fecha: p.fecha
+                })),
+                descuentos: (venta.descuentos || []).map(d => ({
+                    monto: d.monto,
+                    descripcion: d.descripcion,
+                    fecha: d.fecha
+                })),
+                notas: (venta.notas || []).map(n => ({
+                    texto: n.texto,
+                    tipo: n.tipo,
+                    fecha: n.fecha,
+                    usuario: n.usuario?.nombre || ''
+                })),
+                conducta_pago: venta.conducta_pago,
+                // 👉 NUEVO: Equipos canje asociados
+                equiposCanje: equiposCanjeVenta,
+                totalValorTasadoVenta,
+                // 👉 NUEVO: Monto pendiente real (descontando canje)
+                montoPendienteReal: venta.montoTotal - (venta.montoPagado || 0) - totalValorTasadoVenta
+            };
+        });
+
+        // ==========================================
+        // 4. TOTALES FINALES
+        // ==========================================
+        const totalVentas = ventasContado.cantidad + ventasPlanCanje.cantidad;
+        const totalMontoPagado = ventasContado.totalMontoPagado + ventasPlanCanje.totalMontoPagado;
+        const totalDescuentosGeneral = ventasContado.totalDescuentos + ventasPlanCanje.totalDescuentos;
+
+        // ==========================================
+        // RESPUESTA
+        // ==========================================
+        return res.status(200).json({
+            ok: true,
+            message: 'Reporte de ventas directas y plan canje',
+            data: {
+                ventas: ventasFormateadas,
+                resumen: {
+                    totalVentas,
+                    contado: {
+                        cantidad: ventasContado.cantidad,
+                        montoPagado: ventasContado.totalMontoPagado,
+                        descuentos: ventasContado.totalDescuentos
+                    },
+                    plan_canje: {
+                        cantidad: ventasPlanCanje.cantidad,
+                        montoPagado: ventasPlanCanje.totalMontoPagado,
+                        descuentos: ventasPlanCanje.totalDescuentos
+                    },
+                    totales: {
+                        montoPagado: totalMontoPagado,
+                        descuentos: totalDescuentosGeneral,
+                        valorTasadoCanjes: totalValorTasado,
+                        cantidadCanjeDisponibles,
+                        // 👉 NUEVO: Métodos de pago
+                        metodosPago: metodosPagoTotales
+                    }
+                }
+            }
+        });
+
+    } catch (error) {
+        console.error('Error al obtener reporte de ventas directas y canje:', error);
+        return res.status(500).json({
+            ok: false,
+            message: `Error al obtener reporte: ${error.message}`
+        });
+    }
+};
+
+
+// ==========================================
+// 📊 REPORTE DE VENTAS FINANCIADAS (sistema1 y sistema2)
+// ==========================================
+const reporteVentasFinanciadas = async (req, res) => {
+    try {
+        const { anio } = req.query;
+
+        // Validar año
+        if (!anio) {
+            return res.status(400).json({
+                ok: false,
+                message: 'El año es obligatorio'
+            });
+        }
+
+        const anioNum = parseInt(anio);
+        if (isNaN(anioNum) || anioNum < 2000 || anioNum > 2100) {
+            return res.status(400).json({
+                ok: false,
+                message: 'Año inválido'
+            });
+        }
+
+        // ==========================================
+        // 1. BUSCAR VENTAS DE SISTEMA 1 Y SISTEMA 2
+        // ==========================================
+        const ventas = await Venta.find({
+            estado: true,
+            tipoVenta: { $in: ['sistema1', 'sistema2'] }
+        })
+        .select('cliente localidad tipoVenta fechaRealizada fechaEntrega vendedor producto montoTotal montoPagado descuentos conducta_pago cuotas')
+        .sort({ fechaRealizada: -1 })
+        .lean();
+
+        // ==========================================
+        // 2. INICIALIZAR RESUMEN ANUAL (12 meses)
+        // ==========================================
+        const nombresMeses = [
+            'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+            'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+        ];
+
+        const resumenAnual = nombresMeses.map((nombre, index) => ({
+            mes: index + 1,
+            nombre,
+            totalACobrar: 0,
+            totalCobrado: 0,
+            totalPendiente: 0,
+            totalRecargos: 0,
+            porcentajeCobranza: 0,
+            cantidadCuotas: 0,
+            cantidadCuotasPagadas: 0,
+            cantidadCuotasPendientes: 0
+        }));
+
+        // ==========================================
+        // 3. PROCESAR CADA VENTA Y SUS CUOTAS
+        // ==========================================
+        const ventasFormateadas = [];
+
+        for (const venta of ventas) {
+            // Formatear cuotas con información del mes
+            const cuotasFormateadas = [];
+
+            for (const cuota of venta.cuotas || []) {
+                const fechaCobro = cuota.fechaCobro ? new Date(cuota.fechaCobro) : null;
+                
+                if (!fechaCobro) continue;
+
+                const mesCuota = fechaCobro.getMonth() + 1;  // 1-12
+                const anioCuota = fechaCobro.getFullYear();
+
+                // Solo procesar si la cuota pertenece al año seleccionado
+                if (anioCuota !== anioNum) continue;
+
+                // Calcular recargos totales de esta cuota
+                const totalRecargosCuota = (cuota.recargos || []).reduce((sum, r) => sum + r.monto, 0);
+
+                // Calcular recargos que corresponden al mes
+                const recargosDelMes = (cuota.recargos || []).filter(r => {
+                    const fechaRecargo = r.fecha ? new Date(r.fecha) : null;
+                    return fechaRecargo && fechaRecargo.getMonth() + 1 === mesCuota && fechaRecargo.getFullYear() === anioNum;
+                });
+                const totalRecargosMes = recargosDelMes.reduce((sum, r) => sum + r.monto, 0);
+
+                // Actualizar resumen del mes
+                resumenAnual[mesCuota - 1].cantidadCuotas++;
+                resumenAnual[mesCuota - 1].totalACobrar += cuota.montoCuota;
+                resumenAnual[mesCuota - 1].totalRecargos += totalRecargosMes;
+
+                if (cuota.estado_cuota === 'pagada') {
+                    resumenAnual[mesCuota - 1].totalCobrado += cuota.montoPagado || cuota.montoCuota;
+                    resumenAnual[mesCuota - 1].cantidadCuotasPagadas++;
+                } else if (cuota.estado_cuota === 'pendiente') {
+                    resumenAnual[mesCuota - 1].totalPendiente += cuota.montoCuota;
+                    resumenAnual[mesCuota - 1].cantidadCuotasPendientes++;
+                } else if (cuota.estado_cuota === 'pago parcial') {
+                    const pendienteCuota = cuota.montoCuota - (cuota.montoPagado || 0);
+                    resumenAnual[mesCuota - 1].totalPendiente += pendienteCuota;
+                    resumenAnual[mesCuota - 1].totalCobrado += cuota.montoPagado || 0;
+                } else if (cuota.estado_cuota === 'no pagada') {
+                    resumenAnual[mesCuota - 1].totalPendiente += cuota.montoCuota;
+                }
+
+                // Guardar cuota formateada
+                cuotasFormateadas.push({
+                    numeroCuota: cuota.numeroCuota,
+                    montoCuota: cuota.montoCuota,
+                    montoPagado: cuota.montoPagado || 0,
+                    saldoPendiente: cuota.montoCuota - (cuota.montoPagado || 0),
+                    estadoCuota: cuota.estado_cuota,
+                    fechaCobro: cuota.fechaCobro,
+                    fechaCobrada: cuota.fechaCobrada || null,
+                    metodoPago: cuota.metodoPago || '',
+                    cobrador: cuota.cobrador?.nombre || '',
+                    recargos: (cuota.recargos || []).map(r => ({
+                        monto: r.monto,
+                        motivo: r.motivo,
+                        fecha: r.fecha,
+                        diasAtraso: r.diasAtraso
+                    })),
+                    totalRecargos: totalRecargosCuota,
+                    notas: (cuota.notas || []).map(n => ({
+                        texto: n.texto,
+                        fecha: n.fecha
+                    }))
+                });
+            }
+
+            // Calcular totales de la venta
+            const totalDescuentos = (venta.descuentos || []).reduce((sum, d) => sum + d.monto, 0);
+            const totalRecargosVenta = (venta.cuotas || []).reduce((sum, c) => {
+                return sum + (c.recargos || []).reduce((s, r) => s + r.monto, 0);
+            }, 0);
+
+            // Formatear venta con sus cuotas filtradas por año
+            ventasFormateadas.push({
+                _id: venta._id,
+                cliente: venta.cliente,
+                localidad: venta.localidad,
+                tipoVenta: venta.tipoVenta,
+                fechaRealizada: venta.fechaRealizada,
+                fechaEntrega: venta.fechaEntrega || null,
+                vendedor: venta.vendedor || '',
+                producto: venta.producto,
+                montoTotal: venta.montoTotal,
+                montoPagado: venta.montoPagado || 0,
+                montoPendiente: venta.montoTotal - (venta.montoPagado || 0),
+                totalDescuentos,
+                totalRecargos: totalRecargosVenta,
+                conducta_pago: venta.conducta_pago,
+                cuotas: cuotasFormateadas
+            });
+        }
+
+        // ==========================================
+        // 4. CALCULAR PORCENTAJE DE COBRANZA POR MES
+        // ==========================================
+        resumenAnual.forEach(mes => {
+            if (mes.totalACobrar > 0) {
+                mes.porcentajeCobranza = Math.round((mes.totalCobrado / mes.totalACobrar) * 100);
+            }
+        });
+
+        // ==========================================
+        // 5. ENTREGAS FUTURAS (solo sistema2)
+        // ==========================================
+        const hoy = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Argentina/Buenos_Aires' }));
+        hoy.setHours(0, 0, 0, 0);
+
+        const entregasFuturas = ventas
+            .filter(venta => 
+                venta.tipoVenta === 'sistema2' && 
+                venta.fechaEntrega && 
+                new Date(venta.fechaEntrega) >= hoy
+            )
+            .map(venta => ({
+                ventaId: venta._id,
+                cliente: {
+                    nombre: venta.cliente.nombre,
+                    apellido: venta.cliente.apellido,
+                    dni: venta.cliente.dni,
+                    telefono: venta.cliente.telefono || ''
+                },
+                producto: {
+                    nombre: venta.producto.nombre,
+                    modelo: venta.producto.modelo || '',
+                    capacidad: venta.producto.capacidad || '',
+                    color: venta.producto.color || ''
+                },
+                fechaEntrega: venta.fechaEntrega,
+                localidad: venta.localidad,
+                vendedor: venta.vendedor || '',
+                montoTotal: venta.montoTotal,
+                montoPagado: venta.montoPagado || 0,
+                conducta_pago: venta.conducta_pago,
+                // Cuota de entrega (buscamos la nota [ENTREGA] en las cuotas)
+                cuotaEntrega: (() => {
+                    for (const cuota of venta.cuotas || []) {
+                        const tieneNotaEntrega = (cuota.notas || []).some(n => 
+                            n.texto.includes('[ENTREGA]')
+                        );
+                        if (tieneNotaEntrega) {
+                            return {
+                                numeroCuota: cuota.numeroCuota,
+                                fechaCobro: cuota.fechaCobro,
+                                estadoCuota: cuota.estado_cuota,
+                                montoCuota: cuota.montoCuota,
+                                montoPagado: cuota.montoPagado || 0
+                            };
+                        }
+                    }
+                    return null;
+                })()
+            }))
+            .sort((a, b) => new Date(a.fechaEntrega) - new Date(b.fechaEntrega));
+
+        // ==========================================
+        // 6. TOTALES GENERALES DEL AÑO
+        // ==========================================
+        const totalesAnuales = resumenAnual.reduce((acc, mes) => {
+            acc.totalACobrar += mes.totalACobrar;
+            acc.totalCobrado += mes.totalCobrado;
+            acc.totalPendiente += mes.totalPendiente;
+            acc.totalRecargos += mes.totalRecargos;
+            return acc;
+        }, { totalACobrar: 0, totalCobrado: 0, totalPendiente: 0, totalRecargos: 0 });
+
+        totalesAnuales.porcentajeCobranza = totalesAnuales.totalACobrar > 0
+            ? Math.round((totalesAnuales.totalCobrado / totalesAnuales.totalACobrar) * 100)
+            : 0;
+
+        // ==========================================
+        // RESPUESTA
+        // ==========================================
+        return res.status(200).json({
+            ok: true,
+            message: `Reporte de ventas financiadas ${anioNum}`,
+            data: {
+                anio: anioNum,
+                resumenAnual,
+                totalesAnuales,
+                ventas: ventasFormateadas,
+                entregasFuturas,
+                cantidadEntregasFuturas: entregasFuturas.length
+            }
+        });
+
+    } catch (error) {
+        console.error('Error al obtener reporte de ventas financiadas:', error);
+        return res.status(500).json({
+            ok: false,
+            message: `Error al obtener reporte: ${error.message}`
+        });
+    }
+};
+
+// ==========================================
+// 📋 LISTAR CLIENTES (con filtros y paginación)
+// ==========================================
+const listarClientes = async (req, res) => {
+    try {
+        const {
+            nombre,
+            apellido,
+            dni,
+            email,
+            telefono,
+            situacionCrediticia,
+            activo,
+            pagina = 1,
+            limite = 50
+        } = req.query;
+
+        // ==========================================
+        // CONSTRUIR FILTROS
+        // ==========================================
+        const filtros = {};
+
+        if (activo !== undefined && activo !== '') {
+            filtros.activo = activo === 'true';
+        }
+
+        if (nombre) {
+            filtros.nombre = { $regex: nombre, $options: 'i' };
+        }
+
+        if (apellido) {
+            filtros.apellido = { $regex: apellido, $options: 'i' };
+        }
+
+        if (dni) {
+            filtros.dni = { $regex: dni, $options: 'i' };
+        }
+
+        if (email) {
+            filtros.email = { $regex: email, $options: 'i' };
+        }
+
+        if (telefono) {
+            filtros.$or = [
+                { telefono: { $regex: telefono, $options: 'i' } },
+                { telefono2: { $regex: telefono, $options: 'i' } }
+            ];
+        }
+
+        if (situacionCrediticia !== undefined && situacionCrediticia !== '') {
+            filtros.situacionCrediticia = parseInt(situacionCrediticia);
+        }
+
+        // ==========================================
+        // PAGINACIÓN
+        // ==========================================
+        const skip = (parseInt(pagina) - 1) * parseInt(limite);
+        const limit = parseInt(limite);
+
+        // ==========================================
+        // CONSULTAR
+        // ==========================================
+        const [clientes, total] = await Promise.all([
+            Cliente.find(filtros)
+                .sort({ apellido: 1, nombre: 1 })  // Ordenar por apellido
+                .skip(skip)
+                .limit(limit)
+                .lean(),
+            Cliente.countDocuments(filtros)
+        ]);
+
+        // ==========================================
+        // FORMATEAR RESPUESTA
+        // ==========================================
+        const clientesFormateados = clientes.map(cliente => ({
+            _id: cliente._id,
+            nombre: cliente.nombre,
+            apellido: cliente.apellido,
+            nombreCompleto: `${cliente.nombre} ${cliente.apellido}`,
+            dni: cliente.dni,
+            cuil: cliente.cuil || '',
+            telefono: cliente.telefono || '',
+            telefono2: cliente.telefono2 || '',
+            email: cliente.email || '',
+            direccion: cliente.direccion || '',
+            situacionCrediticia: cliente.situacionCrediticia || null,
+            activo: cliente.activo,
+            createdAt: cliente.createdAt,
+            updatedAt: cliente.updatedAt
+        }));
+
+        // ==========================================
+        // RESUMEN
+        // ==========================================
+        const resumen = await Cliente.aggregate([
+            {
+                $group: {
+                    _id: null,
+                    totalClientes: { $sum: 1 },
+                    totalActivos: {
+                        $sum: { $cond: [{ $eq: ['$activo', true] }, 1, 0] }
+                    },
+                    totalInactivos: {
+                        $sum: { $cond: [{ $eq: ['$activo', false] }, 1, 0] }
+                    }
+                }
+            }
+        ]);
+
+        const resumenClientes = resumen[0] || { totalClientes: 0, totalActivos: 0, totalInactivos: 0 };
+
+        // ==========================================
+        // PAGINACIÓN
+        // ==========================================
+        const totalPaginas = Math.ceil(total / limit);
+        const hayMas = parseInt(pagina) < totalPaginas;
+        const restantes = Math.max(0, total - (parseInt(pagina) * limit));
+
+        return res.status(200).json({
+            ok: true,
+            message: 'Clientes encontrados',
+            data: {
+                clientes: clientesFormateados,
+                paginacion: {
+                    total,
+                    pagina: parseInt(pagina),
+                    limite: limit,
+                    totalPaginas,
+                    hayMas,
+                    restantes
+                },
+                resumen: {
+                    totalClientes: resumenClientes.totalClientes,
+                    totalActivos: resumenClientes.totalActivos,
+                    totalInactivos: resumenClientes.totalInactivos
+                }
+            }
+        });
+
+    } catch (error) {
+        console.error('Error al listar clientes:', error);
+        return res.status(500).json({
+            ok: false,
+            message: `Error al listar clientes: ${error.message}`
+        });
+    }
+};
+
+// ==========================================
+// 🔍 OBTENER CLIENTE POR ID
+// ==========================================
+const obtenerClientePorId = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const cliente = await Cliente.findById(id).lean();
+
+        if (!cliente) {
+            return res.status(404).json({
+                ok: false,
+                message: 'Cliente no encontrado'
+            });
+        }
+
+        return res.status(200).json({
+            ok: true,
+            data: {
+                _id: cliente._id,
+                nombre: cliente.nombre,
+                apellido: cliente.apellido,
+                nombreCompleto: `${cliente.nombre} ${cliente.apellido}`,
+                dni: cliente.dni,
+                cuil: cliente.cuil || '',
+                telefono: cliente.telefono || '',
+                telefono2: cliente.telefono2 || '',
+                email: cliente.email || '',
+                direccion: cliente.direccion || '',
+                situacionCrediticia: cliente.situacionCrediticia || null,
+                activo: cliente.activo,
+                createdAt: cliente.createdAt,
+                updatedAt: cliente.updatedAt
+            }
+        });
+
+    } catch (error) {
+        console.error('Error al obtener cliente:', error);
+        return res.status(500).json({
+            ok: false,
+            message: `Error al obtener cliente: ${error.message}`
+        });
+    }
+};
+
+// ==========================================
+// 📊 REPORTE DE GASTOS COMPLETO
+// ==========================================
+const reporteGastos = async (req, res) => {
+    try {
+        const { anio } = req.query;
+
+        // Validar año
+        if (!anio) {
+            return res.status(400).json({
+                ok: false,
+                message: 'El año es obligatorio'
+            });
+        }
+
+        const anioNum = parseInt(anio);
+        if (isNaN(anioNum) || anioNum < 2000 || anioNum > 2100) {
+            return res.status(400).json({
+                ok: false,
+                message: 'Año inválido'
+            });
+        }
+
+        // ==========================================
+        // 1. BUSCAR TODOS LOS GASTOS DEL AÑO
+        // ==========================================
+        const fechaInicio = new Date(Date.UTC(anioNum, 0, 1, 3, 0, 0));
+        const fechaFin = new Date(Date.UTC(anioNum + 1, 0, 1, 2, 59, 59, 999));
+
+        const gastos = await Gastos.find({
+            fecha: { $gte: fechaInicio, $lte: fechaFin }
+        })
+        .sort({ fecha: 1 })
+        .lean();
+
+        // ==========================================
+        // 2. INICIALIZAR RESUMEN ANUAL (12 meses)
+        // ==========================================
+        const nombresMeses = [
+            'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+            'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+        ];
+
+        const resumenAnual = nombresMeses.map((nombre, index) => ({
+            mes: index + 1,
+            nombre,
+            totalGastos: 0,
+            cantidadGastos: 0
+        }));
+
+        // ==========================================
+        // 3. PROCESAR CADA GASTO
+        // ==========================================
+        const gastosFormateados = gastos.map(gasto => {
+            const fecha = new Date(gasto.fecha);
+            const mes = fecha.getMonth() + 1;
+
+            // Actualizar resumen del mes
+            resumenAnual[mes - 1].totalGastos += gasto.Monto_gasto;
+            resumenAnual[mes - 1].cantidadGastos++;
+
+            return {
+                _id: gasto._id,
+                descripcion: gasto.descripcion_gasto,
+                monto: gasto.Monto_gasto,
+                responsable: gasto.responsable,
+                fecha: gasto.fecha,
+                fechaFormateada: fecha.toLocaleDateString('es-AR', {
+                    day: '2-digit',
+                    month: '2-digit',
+                    year: 'numeric'
+                }),
+                mes: mes,
+                nombreMes: nombresMeses[mes - 1],
+                anio: fecha.getFullYear(),
+                createdAt: gasto.createdAt,
+                updatedAt: gasto.updatedAt
+            };
+        });
+
+        // ==========================================
+        // 4. CALCULAR TOTALES ANUALES
+        // ==========================================
+        const totalesAnuales = resumenAnual.reduce((acc, mes) => {
+            acc.totalGastosAnuales += mes.totalGastos;
+            acc.totalCantidadGastos += mes.cantidadGastos;
+            return acc;
+        }, { totalGastosAnuales: 0, totalCantidadGastos: 0 });
+
+        // ==========================================
+        // 5. MES CON MÁS GASTOS
+        // ==========================================
+        const mesMayorGasto = resumenAnual.reduce((max, mes) => 
+            mes.totalGastos > max.totalGastos ? mes : max
+        , resumenAnual[0]);
+
+        // ==========================================
+        // 6. TOTALES GENERALES (todos los años)
+        // ==========================================
+        const resumenGeneral = await Gastos.aggregate([
+            {
+                $group: {
+                    _id: null,
+                    totalGastos: { $sum: '$Monto_gasto' },
+                    cantidadGastos: { $sum: 1 },
+                    gastoPromedio: { $avg: '$Monto_gasto' },
+                    gastoMinimo: { $min: '$Monto_gasto' },
+                    gastoMaximo: { $max: '$Monto_gasto' }
+                }
+            }
+        ]);
+
+        const totalesGenerales = resumenGeneral[0] || {
+            totalGastos: 0,
+            cantidadGastos: 0,
+            gastoPromedio: 0,
+            gastoMinimo: 0,
+            gastoMaximo: 0
+        };
+
+        return res.status(200).json({
+            ok: true,
+            message: `Reporte de gastos ${anioNum}`,
+            data: {
+                anio: anioNum,
+                resumenAnual,
+                totalesAnuales,
+                mesMayorGasto: {
+                    mes: mesMayorGasto.mes,
+                    nombre: mesMayorGasto.nombre,
+                    total: mesMayorGasto.totalGastos
+                },
+                gastos: gastosFormateados,
+                // 👉 Totales generales (todos los años)
+                totalesGenerales: {
+                    totalGastos: totalesGenerales.totalGastos,
+                    cantidadGastos: totalesGenerales.cantidadGastos,
+                    gastoPromedio: Math.round(totalesGenerales.gastoPromedio || 0),
+                    gastoMinimo: totalesGenerales.gastoMinimo || 0,
+                    gastoMaximo: totalesGenerales.gastoMaximo || 0
+                }
+            }
+        });
+
+    } catch (error) {
+        console.error('Error al obtener reporte de gastos:', error);
+        return res.status(500).json({
+            ok: false,
+            message: `Error al obtener reporte de gastos: ${error.message}`
+        });
+    }
+};
+
+// ==========================================
+// 📥 CREAR GASTO
+// ==========================================
+const crearGasto = async (req, res) => {
+    try {
+        const {
+            descripcion_gasto,
+            Monto_gasto,
+            responsable,
+            fecha
+        } = req.body;
+
+        // ==========================================
+        // VALIDACIONES
+        // ==========================================
+        if (!descripcion_gasto || !descripcion_gasto.trim()) {
+            return res.status(400).json({
+                ok: false,
+                message: 'La descripción del gasto es obligatoria'
+            });
+        }
+
+        if (!Monto_gasto || Monto_gasto <= 0) {
+            return res.status(400).json({
+                ok: false,
+                message: 'El monto del gasto debe ser mayor a 0'
+            });
+        }
+
+        if (!responsable || !responsable.trim()) {
+            return res.status(400).json({
+                ok: false,
+                message: 'El responsable del gasto es obligatorio'
+            });
+        }
+
+        // ==========================================
+        // NORMALIZAR FECHA A ARGENTINA (UTC-3)
+        // ==========================================
+        const fechaARG = fecha
+            ? new Date(fecha + 'T00:00:00-03:00')
+            : new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Argentina/Buenos_Aires' }));
+
+        // ==========================================
+        // CREAR GASTO
+        // ==========================================
+        const nuevoGasto = new Gastos({
+            descripcion_gasto: descripcion_gasto.trim(),
+            Monto_gasto: Monto_gasto,
+            responsable: responsable.trim(),
+            fecha: fechaARG
+        });
+
+        await nuevoGasto.save();
+
+        // ==========================================
+        // RESPUESTA CON DATOS FORMATEADOS
+        // ==========================================
+        const gastoFormateado = {
+            _id: nuevoGasto._id,
+            descripcion: nuevoGasto.descripcion_gasto,
+            monto: nuevoGasto.Monto_gasto,
+            responsable: nuevoGasto.responsable,
+            fecha: nuevoGasto.fecha,
+            fechaFormateada: new Date(nuevoGasto.fecha).toLocaleDateString('es-AR', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric'
+            }),
+            createdAt: nuevoGasto.createdAt,
+            updatedAt: nuevoGasto.updatedAt
+        };
+
+        return res.status(201).json({
+            ok: true,
+            message: 'Gasto creado exitosamente',
+            data: gastoFormateado
+        });
+
+    } catch (error) {
+        console.error('Error al crear gasto:', error);
+
+        if (error.name === 'ValidationError') {
+            const mensajes = Object.values(error.errors).map(err => err.message);
+            return res.status(400).json({
+                ok: false,
+                message: mensajes.join('. ')
+            });
+        }
+
+        return res.status(500).json({
+            ok: false,
+            message: `Error al crear gasto: ${error.message}`
+        });
+    }
+};
+
 module.exports = {
     reporteCobranzaMensual,
     historialCuotasPorVenta,
     reporteEquiposCanjeados,
-    listarEquiposDisponibles,
-    listarVentasContado
+    listarEquiposDisponibles2,
+    listarVentasContado,
+
+    resumenGeneral,
+    reporteVentasDirectasCanje,
+    reporteVentasFinanciadas,
+    listarClientes,
+    obtenerClientePorId,
+    reporteGastos,
+    crearGasto
+
+
 };

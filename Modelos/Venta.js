@@ -43,6 +43,12 @@ const ventaSchema = new Schema({
         default: Date.now
     },
 
+      // Fecha de entrega (puede ser null)
+    fechaEntrega: {
+        type: Date,
+        default: null
+    },
+
     // ==========================================
     // VENDEDOR (simple string, sin referencia)
     // ==========================================
@@ -136,6 +142,26 @@ const ventaSchema = new Schema({
             default: Date.now
         },
     }],
+
+    descuentos: [{
+    monto: {
+        type: Number,
+        required: true,
+        min: 0
+    },
+    descripcion: {
+        type: String,
+        required: true,
+        trim: true
+    },
+    fecha: {
+        type: Date,
+        default: Date.now
+    },
+    usuario: {
+        nombre: String
+    }
+}],
 
     // ==========================================
     // MONTOS TOTALES (calculados)

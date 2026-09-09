@@ -439,7 +439,7 @@ const listarStock = async (req, res) => {
             desde,
             hasta,
             pagina = 1,
-            limite = 20
+            limite = 50    // 👉 Por defecto 50 para "Cargar más"
         } = req.query;
 
         // ==========================================
@@ -483,7 +483,6 @@ const listarStock = async (req, res) => {
         // ==========================================
         // CONSULTAR
         // ==========================================
-        // CORREGIDO: EquipoStock en ambos
         const [equipos, total] = await Promise.all([
             EquipoStock.find(filtros)
                 .sort({ fechaIngreso: -1 })
@@ -496,7 +495,6 @@ const listarStock = async (req, res) => {
         // ==========================================
         // CALCULAR RESUMEN DEL STOCK
         // ==========================================
-        // CORREGIDO: EquipoStock
         const resumen = await EquipoStock.aggregate([
             { $match: { disponible: true } },
             {
@@ -511,6 +509,11 @@ const listarStock = async (req, res) => {
 
         const resumenStock = resumen[0] || { cantidad: 0, totalCompra: 0, totalVenta: 0 };
 
+        // 👉 Calcular si hay más páginas (para "Cargar más")
+        const totalPaginas = Math.ceil(total / limit);
+        const hayMas = parseInt(pagina) < totalPaginas;
+        const restantes = Math.max(0, total - (parseInt(pagina) * limit));
+
         return res.status(200).json({
             ok: true,
             data: {
@@ -519,7 +522,9 @@ const listarStock = async (req, res) => {
                     total,
                     pagina: parseInt(pagina),
                     limite: limit,
-                    totalPaginas: Math.ceil(total / limit)
+                    totalPaginas,
+                    hayMas,      // 👉 Para el botón "Cargar más"
+                    restantes    // 👉 Cuántos quedan por cargar
                 },
                 resumen: {
                     cantidadTotalDisponible: resumenStock.cantidad,
