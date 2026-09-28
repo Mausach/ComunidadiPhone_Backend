@@ -1,7 +1,7 @@
 const express = require('express');
 const { check } = require('express-validator');
 
-const { crearCliente, buscarClientePorDni, crearVenta2 } = require('../controlador/ventas');
+const { crearCliente, buscarClientePorDni, crearVenta2, agregarDocumentacion, actualizarDocumentacion, obtenerDocumentacion } = require('../controlador/ventas');
 const { validarJWTVentas } = require('../midelwaresdefin/ValidarJWT_ventas');
 const { validarCampos } = require('../midelwaresdefin/ValidarCampos');
 
@@ -30,6 +30,9 @@ routerVentas.get('/buscar-cliente/:dni', validarJWTVentas, buscarClientePorDni);
 routerVentas.post('/ventas-procesar',
      validarJWTVentas,
       crearVenta2);
+
+
+    
 
 
 

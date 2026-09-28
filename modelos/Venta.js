@@ -43,7 +43,7 @@ const ventaSchema = new Schema({
         default: Date.now
     },
 
-      // Fecha de entrega (puede ser null)
+    // Fecha de entrega (puede ser null)
     fechaEntrega: {
         type: Date,
         default: null
@@ -108,6 +108,8 @@ const ventaSchema = new Schema({
         dni: String,
         cuil: String,
         telefono: String,
+        relacion: String, //relacion con solicitante
+        ocupacion: String, //ocupacion del garante
         telefono2: String,
         email: String,
         direccion: String,
@@ -144,24 +146,24 @@ const ventaSchema = new Schema({
     }],
 
     descuentos: [{
-    monto: {
-        type: Number,
-        required: true,
-        min: 0
-    },
-    descripcion: {
-        type: String,
-        required: true,
-        trim: true
-    },
-    fecha: {
-        type: Date,
-        default: Date.now
-    },
-    usuario: {
-        nombre: String
-    }
-}],
+        monto: {
+            type: Number,
+            required: true,
+            min: 0
+        },
+        descripcion: {
+            type: String,
+            required: true,
+            trim: true
+        },
+        fecha: {
+            type: Date,
+            default: Date.now
+        },
+        usuario: {
+            nombre: String
+        }
+    }],
 
     // ==========================================
     // MONTOS TOTALES (calculados)
@@ -203,6 +205,29 @@ const ventaSchema = new Schema({
     }],
 
     // ==========================================
+    // DOCUMENTACIÓN (carpeta con archivos)
+    // ==========================================
+    documentacion: {
+        urlCarpeta: {
+            type: String,
+            default: null,
+            trim: true
+        },
+        fechaSubida: {
+            type: Date,
+            default: null
+        },
+        subidoPor: {
+            type: String,
+            default: null
+        },
+        notas: {
+            type: String,
+            default: null
+        }
+    },
+
+    // ==========================================
     // CUOTAS
     // ==========================================
     frecuenciaCuota: {
@@ -213,16 +238,16 @@ const ventaSchema = new Schema({
 
     cuotas: [{
         numeroCuota: Number,
-        
+
         // Monto original de la cuota (NUNCA se modifica)
         montoCuota: Number,
-        
+
         // Monto realmente pagado (para pagos parciales)
         montoPagado: {
             type: Number,
             default: 0
         },
-        
+
         // 👉 NUEVO: Array de recargos por atraso/mora (HISTÓRICO)
         recargos: [{
             monto: {
@@ -257,12 +282,12 @@ const ventaSchema = new Schema({
                 }
             }
         }],
-        
+
         // ⚠️ Campo calculado: total de recargos acumulados
         // NO se guarda en BD, se calcula con un virtual o en el frontend
-        
+
         metodoPago: String,
-        
+
         notas: [{
             texto: String,
             fecha: {
@@ -273,16 +298,16 @@ const ventaSchema = new Schema({
                 nombre: String
             }
         }],
-        
+
         fechaCobro: Date,
-        
+
         estado_cuota: {
             type: String,
             enum: ["pagada", "pendiente", "pago parcial", "no pagada"]
         },
-        
+
         fechaCobrada: Date,
-        
+
         cobrador: {
             nombre: String
         }

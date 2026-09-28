@@ -1,7 +1,7 @@
 const express = require('express');
 const { check } = require('express-validator');
 
-const { reporteCobranzaMensual, historialCuotasPorVenta, reporteEquiposCanjeados,  listarVentasContado, listarEquiposDisponibles2, resumenGeneral, reporteVentasFinanciadas, reporteVentasDirectasCanje, listarClientes, reporteGastos, crearGasto } = require('../controlador/reportes');
+const { reporteCobranzaMensual, historialCuotasPorVenta, reporteEquiposCanjeados,  listarVentasContado, listarEquiposDisponibles2, resumenGeneral, reporteVentasFinanciadas, reporteVentasDirectasCanje, listarClientes, reporteGastos, crearGasto, reportesVentasCeo, agregarDocumentacion, actualizarDocumentacion, obtenerDocumentacion } = require('../controlador/reportes');
 const { validarCampos } = require('../midelwaresdefin/ValidarCampos');
 
 
@@ -51,7 +51,23 @@ routerReporteCobranza.get('/clientes', listarClientes);
 //reportes clientes
 routerReporteCobranza.get('/gastos',reporteGastos );
 
+//reportes de todas las ventas CEO
+routerReporteCobranza.get('/rep-vtas',reportesVentasCeo );
+
 // 📥 Crear gasto
 routerReporteCobranza.post('/new-gastos', crearGasto);
+
+
+
+// 📤 Agregar documentación a una venta
+routerReporteCobranza.post('/agregar-documentacion/:idVenta', agregarDocumentacion);
+
+// ✏️ Actualizar documentación de una venta
+routerReporteCobranza.put('/actualizar-documentacion/:idVenta', actualizarDocumentacion);
+
+// 🔍 Obtener documentación de una venta
+routerReporteCobranza.get('/documentacion/:idVenta', obtenerDocumentacion);    
+
+
 
 module.exports = routerReporteCobranza;

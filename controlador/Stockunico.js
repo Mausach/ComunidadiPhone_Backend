@@ -823,124 +823,60 @@ const eliminarEquipo = async (req, res) => {
 };
 
 // ==========================================
-// 📤 MARCAR COMO VENDIDO
+// 🔍 OBTENER EQUIPO CANJE POR VENTA ORIGEN
 // ==========================================
-const marcarComoVendido = async (req, res) => {
+const obtenerEquipoCanjePorVenta = async (req, res) => {
     try {
-        const { id } = req.params;
-        const { idVenta } = req.body;
+        const { id } = req.params;  // ID de la venta
 
-        if (!idVenta) {
+        // ==========================================
+        // VALIDACIONES
+        // ==========================================
+        if (!id) {
             return res.status(400).json({
                 ok: false,
                 message: 'El ID de la venta es obligatorio'
             });
         }
 
-        const equipo = await Equipo.findById(id);
+        // ==========================================
+        // BUSCAR EQUIPO CANJE POR ventaOrigen
+        // ==========================================
+        const equipoCanje = await Equipos.findOne({
+            ventaOrigen: id,
+            origen: 'canje'
+        })
+        .select('nombre modelo capacidad imei color bateria estado valorTasado origen fechaRecepcion localidad')
+        .lean();
 
-        if (!equipo) {
+        if (!equipoCanje) {
             return res.status(404).json({
                 ok: false,
-                message: 'Equipo no encontrado'
+                message: 'No se encontró equipo canje asociado a esta venta'
             });
         }
-
-        if (!equipo.disponible) {
-            return res.status(400).json({
-                ok: false,
-                message: 'El equipo ya no está disponible'
-            });
-        }
-
-        const venta = await Venta.findById(idVenta);
-
-        if (!venta) {
-            return res.status(404).json({
-                ok: false,
-                message: 'Venta no encontrada'
-            });
-        }
-
-        equipo.disponible = false;
-        equipo.fechaVenta = new Date();
-        equipo.ventaAsociada = idVenta;
-
-        equipo.notas.push({
-            texto: `[VENTA ASOCIADA] Equipo vendido en venta #${idVenta} - Cliente: ${venta.cliente.nombre} ${venta.cliente.apellido}`,
-            fecha: new Date(),
-            usuario: {
-                nombre: req.usuario?.nombre || 'Sistema'
-            },
-            tipo: 'importante'
-        });
-
-        await equipo.save();
 
         return res.status(200).json({
             ok: true,
-            message: 'Equipo marcado como vendido exitosamente',
-            data: equipo
+            data: {
+                equipoCanje
+            }
         });
 
     } catch (error) {
-        console.error('Error al marcar como vendido:', error);
-        return res.status(500).json({
-            ok: false,
-            message: `Error al marcar como vendido: ${error.message}`
-        });
-    }
-};
+        console.error('Error al obtener equipo canje por venta:', error);
 
-// ==========================================
-// 📥 REINGRESAR AL STOCK
-// ==========================================
-const reingresarEquipo = async (req, res) => {
-    try {
-        const { id } = req.params;
-
-        const equipo = await Equipo.findById(id);
-
-        if (!equipo) {
-            return res.status(404).json({
-                ok: false,
-                message: 'Equipo no encontrado'
-            });
-        }
-
-        if (equipo.disponible) {
+        // Error de ID inválido
+        if (error.name === 'CastError') {
             return res.status(400).json({
                 ok: false,
-                message: 'El equipo ya está disponible'
+                message: 'ID de venta inválido'
             });
         }
 
-        equipo.disponible = true;
-        equipo.fechaVenta = null;
-        equipo.ventaAsociada = null;
-
-        equipo.notas.push({
-            texto: `[REINGRESO] Equipo reingresado por ${req.usuario?.nombre || 'Sistema'}`,
-            fecha: new Date(),
-            usuario: {
-                nombre: req.usuario?.nombre || 'Sistema'
-            },
-            tipo: 'importante'
-        });
-
-        await equipo.save();
-
-        return res.status(200).json({
-            ok: true,
-            message: 'Equipo reingresado exitosamente',
-            data: equipo
-        });
-
-    } catch (error) {
-        console.error('Error al reingresar equipo:', error);
         return res.status(500).json({
             ok: false,
-            message: `Error al reingresar equipo: ${error.message}`
+            message: `Error al obtener equipo canje: ${error.message}`
         });
     }
 };
@@ -955,6 +891,8 @@ module.exports = {
     obtenerEquipoPorId,
     listarEquipos,
     eliminarEquipo,
+
+    obtenerEquipoCanjePorVenta
     //marcarComoVendido,
     //reingresarEquipo
 };

@@ -2307,6 +2307,371 @@ const crearGasto = async (req, res) => {
     }
 };
 
+const reportesVentasCeo = async (req, res) => {
+    try {
+        const {
+            tipoVenta,
+            localidad,
+            conducta,
+            busqueda,
+            pagina = 1,
+            limite = 15
+        } = req.query;
+
+        // ==========================================
+        // FILTROS (igual que antes)
+        // ==========================================
+        const filtros = { estado: true };
+
+        if (tipoVenta && tipoVenta.trim() !== '') filtros.tipoVenta = tipoVenta.trim();
+        if (localidad && localidad.trim() !== '') filtros.localidad = localidad.toLowerCase().trim();
+        if (conducta && conducta.trim() !== '') filtros.conducta_pago = conducta.trim();
+
+        if (busqueda && busqueda.trim() !== '') {
+            const busquedaTrim = busqueda.trim();
+            filtros.$or = [
+                { 'cliente.nombre': { $regex: busquedaTrim, $options: 'i' } },
+                { 'cliente.apellido': { $regex: busquedaTrim, $options: 'i' } },
+                { 'cliente.dni': { $regex: busquedaTrim, $options: 'i' } },
+                { 'producto.nombre': { $regex: busquedaTrim, $options: 'i' } }
+            ];
+        }
+
+        // ==========================================
+        // PAGINACIÓN
+        // ==========================================
+        const paginaNum = parseInt(pagina);
+        const limiteNum = parseInt(limite);
+        const skip = (paginaNum - 1) * limiteNum;
+
+        // ==========================================
+        // CONSULTAR — TRAER TODO COMPLETO
+        // ==========================================
+        const [ventas, total] = await Promise.all([
+            Venta.find(filtros)
+                .sort({ fechaRealizada: -1 })
+                .skip(skip)
+                .limit(limiteNum)
+                .lean(),  // 👈 SIN select → trae TODOS los campos
+            Venta.countDocuments(filtros)
+        ]);
+
+        // ==========================================
+        // LABELS DE TIPO
+        // ==========================================
+        const tipoVentaLabels = {
+            contado: 'Contado',
+            plan_canje: 'Plan Canje',
+            sistema1: 'Sistema 1',
+            sistema2: 'Sistema 2'
+        };
+
+        // ==========================================
+        // FORMATEAR VENTAS
+        // ==========================================
+        const ventasFormateadas = ventas.map(venta => {
+            const tieneCuotas = venta.tipoVenta === 'sistema1' || venta.tipoVenta === 'sistema2';
+
+            // Calcular resumen de cuotas (extra para el front)
+            let cuotasResumen = null;
+            if (tieneCuotas && venta.cuotas && venta.cuotas.length > 0) {
+                const totalCuotas = venta.cuotas.length;
+                const pagadas = venta.cuotas.filter(c => c.estado_cuota === 'pagada').length;
+                const porcentajeCobrado = totalCuotas > 0 ? Math.round((pagadas / totalCuotas) * 100) : 0;
+
+                cuotasResumen = {
+                    total: totalCuotas,
+                    pagadas,
+                    porcentajeCobrado
+                };
+            }
+
+            return {
+                // 👇 TODO el documento original
+                ...venta,
+
+                // 👇 Campos calculados para el front
+                tipoVentaLabel: tipoVentaLabels[venta.tipoVenta] || venta.tipoVenta,
+                tieneCuotas,
+                montoPendiente: (venta.montoTotal || 0) - (venta.montoPagado || 0),
+
+                // 👇 Array completo (por seguridad, si no existía)
+                cuotas: venta.cuotas || [],
+                pagos: venta.pagos || [],
+                descuentos: venta.descuentos || [],
+                notas: venta.notas || [],
+
+                // 👇 Resumen para la barra de progreso
+                cuotasResumen,
+
+                // 👇 Documentación asegurada
+                documentacion: venta.documentacion || {
+                    urlCarpeta: null,
+                    fechaSubida: null,
+                    subidoPor: null,
+                    notas: null
+                }
+            };
+        });
+
+        // ==========================================
+        // PAGINACIÓN FINAL
+        // ==========================================
+        const totalPaginas = Math.ceil(total / limiteNum);
+        const hayMas = paginaNum < totalPaginas;
+        const restantes = Math.max(0, total - (paginaNum * limiteNum));
+
+        return res.status(200).json({
+            ok: true,
+            data: {
+                ventas: ventasFormateadas,
+                paginacion: {
+                    total,
+                    pagina: paginaNum,
+                    limite: limiteNum,
+                    totalPaginas,
+                    hayMas,
+                    restantes
+                }
+            }
+        });
+
+    } catch (error) {
+        console.error('Error al obtener panel de ventas:', error);
+        return res.status(500).json({
+            ok: false,
+            message: `Error al obtener panel de ventas: ${error.message}`
+        });
+    }
+};
+
+
+// ==========================================
+// 📤 AGREGAR DOCUMENTACIÓN A VENTA
+// ==========================================
+const agregarDocumentacion = async (req, res) => {
+    try {
+        const { idVenta } = req.params;
+        const { urlCarpeta, notas, subidoPor } = req.body;
+
+        // ==========================================
+        // VALIDACIONES
+        // ==========================================
+        if (!idVenta) {
+            return res.status(400).json({
+                ok: false,
+                message: 'El ID de la venta es obligatorio'
+            });
+        }
+
+        if (!urlCarpeta || !urlCarpeta.trim()) {
+            return res.status(400).json({
+                ok: false,
+                message: 'La URL de la carpeta es obligatoria'
+            });
+        }
+
+        // ==========================================
+        // BUSCAR VENTA
+        // ==========================================
+        const venta = await Venta.findById(idVenta);
+
+        if (!venta) {
+            return res.status(404).json({
+                ok: false,
+                message: 'Venta no encontrada'
+            });
+        }
+
+        // ==========================================
+        // VERIFICAR SI YA TIENE DOCUMENTACIÓN
+        // ==========================================
+        if (venta.documentacion?.urlCarpeta) {
+            return res.status(400).json({
+                ok: false,
+                message: 'Esta venta ya tiene documentación. Usá el método de actualización.'
+            });
+        }
+
+        // ==========================================
+        // AGREGAR DOCUMENTACIÓN
+        // ==========================================
+        const fechaArgentina = new Date(new Date().toLocaleString('en-US', {
+            timeZone: 'America/Argentina/Buenos_Aires'
+        }));
+
+        venta.documentacion = {
+            urlCarpeta: urlCarpeta.trim(),
+            fechaSubida: fechaArgentina,
+            subidoPor: subidoPor || req.usuario?.nombre || 'Sistema',
+            notas: notas?.trim() || null
+        };
+
+        // Agregar nota de historial
+        venta.notas.push({
+            texto: `[DOCUMENTACIÓN] Se agregó documentación a la venta. URL: ${urlCarpeta}`,
+            fecha: fechaArgentina,
+            tipo: 'importante',
+            usuario: {
+                nombre: subidoPor || req.usuario?.nombre || 'Sistema'
+            }
+        });
+
+        await venta.save();
+
+        return res.status(201).json({
+            ok: true,
+            message: 'Documentación agregada exitosamente',
+            data: {
+                _id: venta._id,
+                documentacion: venta.documentacion
+            }
+        });
+
+    } catch (error) {
+        console.error('Error al agregar documentación:', error);
+        return res.status(500).json({
+            ok: false,
+            message: `Error al agregar documentación: ${error.message}`
+        });
+    }
+};
+
+// ==========================================
+// ✏️ ACTUALIZAR DOCUMENTACIÓN DE VENTA
+// ==========================================
+const actualizarDocumentacion = async (req, res) => {
+    try {
+        const { idVenta } = req.params;
+        const { urlCarpeta, notas, subidoPor } = req.body;
+
+        // ==========================================
+        // VALIDACIONES
+        // ==========================================
+        if (!idVenta) {
+            return res.status(400).json({
+                ok: false,
+                message: 'El ID de la venta es obligatorio'
+            });
+        }
+
+        // ==========================================
+        // BUSCAR VENTA
+        // ==========================================
+        const venta = await Venta.findById(idVenta);
+
+        if (!venta) {
+            return res.status(404).json({
+                ok: false,
+                message: 'Venta no encontrada'
+            });
+        }
+
+        // ==========================================
+        // VERIFICAR QUE TENGA DOCUMENTACIÓN
+        // ==========================================
+        if (!venta.documentacion?.urlCarpeta) {
+            return res.status(400).json({
+                ok: false,
+                message: 'Esta venta no tiene documentación. Usá el método para agregar.'
+            });
+        }
+
+        // ==========================================
+        // ACTUALIZAR CAMPOS (solo los que vienen)
+        // ==========================================
+        const fechaArgentina = new Date(new Date().toLocaleString('en-US', {
+            timeZone: 'America/Argentina/Buenos_Aires'
+        }));
+
+        const cambios = [];
+
+        if (urlCarpeta !== undefined && urlCarpeta.trim() !== '') {
+            venta.documentacion.urlCarpeta = urlCarpeta.trim();
+            cambios.push('URL de carpeta');
+        }
+
+        if (notas !== undefined) {
+            venta.documentacion.notas = notas?.trim() || null;
+            cambios.push('notas');
+        }
+
+        if (subidoPor !== undefined && subidoPor.trim() !== '') {
+            venta.documentacion.subidoPor = subidoPor.trim();
+            cambios.push('subidoPor');
+        }
+
+        // Actualizar fecha cada vez que se modifica
+        venta.documentacion.fechaSubida = fechaArgentina;
+
+        // Agregar nota de historial
+        venta.notas.push({
+            texto: `[DOCUMENTACIÓN ACTUALIZADA] Se modificó la documentación. Campos modificados: ${cambios.join(', ')}`,
+            fecha: fechaArgentina,
+            tipo: 'importante',
+            usuario: {
+                nombre: req.usuario?.nombre || 'Sistema'
+            }
+        });
+
+        await venta.save();
+
+        return res.status(200).json({
+            ok: true,
+            message: 'Documentación actualizada exitosamente',
+            data: {
+                _id: venta._id,
+                documentacion: venta.documentacion
+            }
+        });
+
+    } catch (error) {
+        console.error('Error al actualizar documentación:', error);
+        return res.status(500).json({
+            ok: false,
+            message: `Error al actualizar documentación: ${error.message}`
+        });
+    }
+};
+
+// ==========================================
+// 🔍 OBTENER DOCUMENTACIÓN DE VENTA
+// ==========================================
+const obtenerDocumentacion = async (req, res) => {
+    try {
+        const { idVenta } = req.params;
+
+        const venta = await Venta.findById(idVenta)
+            .select('cliente.nombre cliente.apellido documentacion')
+            .lean();
+
+        if (!venta) {
+            return res.status(404).json({
+                ok: false,
+                message: 'Venta no encontrada'
+            });
+        }
+
+        return res.status(200).json({
+            ok: true,
+            data: {
+                ventaId: venta._id,
+                cliente: venta.cliente,
+                documentacion: venta.documentacion || null
+            }
+        });
+
+    } catch (error) {
+        console.error('Error al obtener documentación:', error);
+        return res.status(500).json({
+            ok: false,
+            message: `Error al obtener documentación: ${error.message}`
+        });
+    }
+};
+
+
+
 module.exports = {
     reporteCobranzaMensual,
     historialCuotasPorVenta,
@@ -2320,7 +2685,12 @@ module.exports = {
     listarClientes,
     obtenerClientePorId,
     reporteGastos,
-    crearGasto
+    crearGasto,
+
+    reportesVentasCeo,
+    agregarDocumentacion,
+    actualizarDocumentacion,
+    obtenerDocumentacion
 
 
 };
