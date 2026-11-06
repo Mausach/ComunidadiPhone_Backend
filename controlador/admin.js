@@ -1,6 +1,7 @@
 const bcryptjs = require('bcrypt');
 const jwt = require("jsonwebtoken");
 const Usuario = require('../modelos/Usuario');
+const Cliente = require('../modelos/Cliente');
 
 
 // Crear usuario empleado
@@ -374,9 +375,152 @@ const CambiarEstadoUsuario = async (req, res) => {
     }
 };
 
+//updateclientes
+const actualizarCliente = async (req, res) => {
+    try {
+        const { id } = req.params; // El ID del cliente a editar
+        const {
+            nombre,
+            apellido,
+            dni,
+            cuil,
+            telefono,
+            telefono2,
+            email,
+            direccion,
+            situacionCrediticia,
+            activo
+        } = req.body;
+
+        // ==========================================
+        // 1. VERIFICAR EXISTENCIA
+        // ==========================================
+        const cliente = await Cliente.findById(id);
+        if (!cliente) {
+            return res.status(404).json({
+                ok: false,
+                message: 'Cliente no encontrado'
+            });
+        }
+
+        // ==========================================
+        // 2. CONSTRUIR OBJETO DE ACTUALIZACIÓN
+        // ==========================================
+        // Solo agregamos al objeto los campos que vienen en el body (no undefined)
+        const updates = {};
+
+        if (nombre !== undefined) updates.nombre = nombre.trim();
+        if (apellido !== undefined) updates.apellido = apellido.trim();
+        if (direccion !== undefined) updates.direccion = direccion.trim();
+        
+        // Los campos que se pueden enviar como null/vacíos
+        if (telefono !== undefined) updates.telefono = telefono ? telefono.trim() : null;
+        if (telefono2 !== undefined) updates.telefono2 = telefono2 ? telefono2.trim() : null;
+        if (email !== undefined) updates.email = email ? email.toLowerCase().trim() : null;
+        
+        if (situacionCrediticia !== undefined) updates.situacionCrediticia = situacionCrediticia;
+        if (activo !== undefined) updates.activo = activo;
+
+        // ==========================================
+        // 3. VALIDACIONES DE UNICIDAD (DNI, CUIL, EMAIL)
+        // ==========================================
+        
+        // Validar DNI
+        if (dni !== undefined && dni !== cliente.dni) {
+            const existeDni = await Cliente.findOne({ dni: dni.trim(), _id: { $ne: id } });
+            if (existeDni) {
+                return res.status(400).json({
+                    ok: false,
+                    message: 'El DNI ya está registrado en otro cliente'
+                });
+            }
+            updates.dni = dni.trim();
+        }
+
+        // Validar CUIL
+        if (cuil !== undefined && cuil !== cliente.cuil) {
+            // Si cuil viene vacío o null, permitimos borrarlo
+            if (cuil && cuil.trim() !== '') {
+                const existeCuil = await Cliente.findOne({ cuil: cuil.trim(), _id: { $ne: id } });
+                if (existeCuil) {
+                    return res.status(400).json({
+                        ok: false,
+                        message: 'El CUIL ya está registrado en otro cliente'
+                    });
+                }
+                updates.cuil = cuil.trim();
+            } else {
+                updates.cuil = null;
+            }
+        }
+
+        // Validar EMAIL
+        if (email !== undefined && email !== cliente.email) {
+            if (email && email.trim() !== '') {
+                const existeEmail = await Cliente.findOne({ email: email.toLowerCase().trim(), _id: { $ne: id } });
+                if (existeEmail) {
+                    return res.status(400).json({
+                        ok: false,
+                        message: 'El email ya está registrado en otro cliente'
+                    });
+                }
+                updates.email = email.toLowerCase().trim();
+            } else {
+                updates.email = null;
+            }
+        }
+
+        // ==========================================
+        // 4. ACTUALIZAR CLIENTE
+        // ==========================================
+        const clienteActualizado = await Cliente.findByIdAndUpdate(
+            id,
+            { $set: updates },
+            { 
+                new: true, // Devuelve el documento modificado
+                runValidators: true // Ejecuta las validaciones del Schema
+            }
+        ).select('-__v -createdAt -updatedAt'); // Excluimos campos no necesarios
+
+        res.status(200).json({
+            ok: true,
+            message: 'Cliente actualizado correctamente',
+            cliente: clienteActualizado,
+            camposActualizados: Object.keys(updates)
+        });
+
+    } catch (error) {
+        console.error('Error al actualizar cliente:', error);
+
+        // Manejar error de clave duplicada por si acaso se escapó alguna validación
+        if (error.code === 11000) {
+            const campo = Object.keys(error.keyPattern)[0];
+            return res.status(400).json({
+                ok: false,
+                message: `Ya existe un cliente con ese ${campo}`
+            });
+        }
+
+        // Manejar error de validación de Mongoose
+        if (error.name === 'ValidationError') {
+            const mensajes = Object.values(error.errors).map(err => err.message);
+            return res.status(400).json({
+                ok: false,
+                message: mensajes.join('. ')
+            });
+        }
+
+        res.status(500).json({
+            ok: false,
+            message: 'Error interno del servidor. Por favor contacte al administrador'
+        });
+    }
+};
+
 module.exports = {
     crearUsuario,
     actualizarUsuario,
+    actualizarCliente,
     cargarUsuarios,
     CambiarEstadoUsuario,
 

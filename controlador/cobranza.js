@@ -26,14 +26,31 @@ const listarVentasCobranza = async (req, res) => {
             cuotas: { $exists: true, $ne: [] }
         };
 
-        // Filtro por DNI
-        if (dni) {
-            filtros['cliente.dni'] = dni.trim();
+        // 👉 BÚSQUEDA INTELIGENTE (nombre + apellido, cualquier orden)
+        // Acepta: "VANESA CALO", "CALO VANESA", "VANESA", "CALO"
+        if (nombre && nombre.trim() !== '') {
+            const palabras = nombre.trim().split(/\s+/).filter(p => p.length > 0);
+
+            if (palabras.length > 0) {
+                // Cada palabra debe aparecer en nombre o apellido del cliente
+                filtros.$and = palabras.map(palabra => {
+                    const rx = new RegExp(
+                        palabra.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+                        'i'
+                    );
+                    return {
+                        $or: [
+                            { 'cliente.nombre': rx },
+                            { 'cliente.apellido': rx }
+                        ]
+                    };
+                });
+            }
         }
 
-        // Filtro por nombre (búsqueda parcial)
-        if (nombre) {
-            filtros['cliente.nombre'] = { $regex: nombre.trim(), $options: 'i' };
+        // 👉 Filtro por DNI (se mantiene igual, es explícito)
+        if (dni) {
+            filtros['cliente.dni'] = dni.trim();
         }
 
         // Filtro por conducta_pago
@@ -198,158 +215,6 @@ const listarVentasCobranza = async (req, res) => {
         return res.status(500).json({
             ok: false,
             message: `Error al listar ventas: ${error.message}`
-        });
-    }
-};
-
-//lista las ventas y cuotas del dia
-const listarCobranzasDelDia = async (req, res) => {
-    try {
-        const {
-            localidad,
-            vendedor,
-            pagina = 1,
-            limite = 20
-        } = req.query;
-
-        // ==========================================
-        // CALCULAR HOY EN ARGENTINA
-        // ==========================================
-        const ahora = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Argentina/Buenos_Aires' }));
-        const inicioHoy = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate(), 0, 0, 0);
-        const finHoy = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate(), 23, 59, 59, 999);
-
-        // Convertir a UTC para la consulta (Argentina = UTC-3)
-        // BIEN (Argentina está UTC-3, hay que restar para convertir a UTC)
-        const inicioUTC = new Date(inicioHoy.getTime() - (3 * 60 * 60 * 1000));
-        const finUTC = new Date(finHoy.getTime() - (3 * 60 * 60 * 1000));
-
-        // ==========================================
-        // CONSTRUIR FILTROS
-        // ==========================================
-        const filtros = {
-            estado: true,
-            frecuenciaCuota: { $ne: null },
-            'cuotas.fechaCobro': { $gte: inicioUTC, $lte: finUTC }
-        };
-
-        // Filtro por localidad
-        if (localidad) {
-            filtros.localidad = localidad.toLowerCase().trim();
-        }
-
-        // Filtro por vendedor
-        if (vendedor) {
-            filtros.vendedor = vendedor.trim();
-        }
-
-        // ==========================================
-        // CALCULAR PAGINACIÓN
-        // ==========================================
-        const skip = (parseInt(pagina) - 1) * parseInt(limite);
-        const limit = parseInt(limite);
-
-        // ==========================================
-        // CONSULTAR
-        // ==========================================
-        const [ventas, total] = await Promise.all([
-            Venta.find(filtros)
-                .select('cliente localidad tipoVenta vendedor fechaRealizada montoTotal montoPagado conducta_pago frecuenciaCuota cuotas')
-                .sort({ 'cliente.apellido': 1 })
-                .skip(skip)
-                .limit(limit)
-                .lean(),
-            Venta.countDocuments(filtros)
-        ]);
-
-        // ==========================================
-        // FORMATEAR RESPUESTA
-        // ==========================================
-        const ventasFormateadas = ventas.map(venta => {
-            // Filtrar solo las cuotas de hoy
-            const cuotasHoy = venta.cuotas.filter(c => {
-                const fechaCobro = new Date(c.fechaCobro);
-                return fechaCobro >= inicioUTC && fechaCobro <= finUTC;
-            });
-
-            // Totales de la venta
-            const totalCuotas = venta.cuotas.length;
-            const cuotasPagadas = venta.cuotas.filter(c => c.estado_cuota === 'pagada').length;
-            const cuotasPendientes = venta.cuotas.filter(c => c.estado_cuota === 'pendiente').length;
-            const cuotasAtrasadas = venta.cuotas.filter(c => c.estado_cuota === 'no pagada').length;
-            const cuotasPagoParcial = venta.cuotas.filter(c => c.estado_cuota === 'pago parcial').length;
-            const montoPendiente = venta.montoTotal - (venta.montoPagado || 0);
-
-            return {
-                _id: venta._id,
-                cliente: venta.cliente,
-                localidad: venta.localidad,
-                tipoVenta: venta.tipoVenta,
-                vendedor: venta.vendedor,
-                frecuenciaCuota: venta.frecuenciaCuota,
-                fechaRealizada: venta.fechaRealizada,
-                montoTotal: venta.montoTotal,
-                montoPagado: venta.montoPagado || 0,
-                montoPendiente,
-                conducta_pago: venta.conducta_pago,
-                cuotas: {
-                    total: totalCuotas,
-                    pagadas: cuotasPagadas,
-                    pendientes: cuotasPendientes,
-                    atrasadas: cuotasAtrasadas,
-                    pagoParcial: cuotasPagoParcial
-                },
-                cuotasHoy: cuotasHoy.map(c => ({
-                    numeroCuota: c.numeroCuota,
-                    montoCuota: c.montoCuota,
-                    estadoCuota: c.estado_cuota,
-                    metodoPago: c.metodoPago,
-                    fechaCobro: c.fechaCobro,
-                    fechaCobrada: c.fechaCobrada,
-                    cobrador: c.cobrador,
-                    notas: c.notas
-                })),
-                totalCobrarHoy: cuotasHoy.reduce((sum, c) => {
-                    return sum + (c.estado_cuota === 'pendiente' || c.estado_cuota === 'pago parcial' ? c.montoCuota : 0);
-                }, 0)
-            };
-        });
-
-        // Totales del día
-        const totalesDia = ventasFormateadas.reduce((acc, venta) => {
-            acc.totalVentas += 1;
-            acc.totalCobrarHoy += venta.totalCobrarHoy;
-            acc.cuotasPendientesHoy += venta.cuotasHoy.filter(c => c.estadoCuota === 'pendiente').length;
-            acc.cuotasPagadasHoy += venta.cuotasHoy.filter(c => c.estadoCuota === 'pagada').length;
-            acc.cuotasAtrasadasHoy += venta.cuotasHoy.filter(c => c.estadoCuota === 'no pagada').length;
-            return acc;
-        }, {
-            totalVentas: 0,
-            totalCobrarHoy: 0,
-            cuotasPendientesHoy: 0,
-            cuotasPagadasHoy: 0,
-            cuotasAtrasadasHoy: 0
-        });
-
-        return res.status(200).json({
-            ok: true,
-            message: `Cobranzas del día ${ahora.toLocaleDateString('es-AR')}`,
-            fecha: ahora,
-            totalesDia,
-            data: ventasFormateadas,
-            paginacion: {
-                total,
-                pagina: parseInt(pagina),
-                limite: limit,
-                paginas: Math.ceil(total / limit)
-            }
-        });
-
-    } catch (error) {
-        console.error('Error al listar cobranzas del día:', error);
-        return res.status(500).json({
-            ok: false,
-            message: `Error al listar cobranzas del día: ${error.message}`
         });
     }
 };
@@ -877,40 +742,36 @@ const editarMontoCuota = async (req, res) => {
         });
     }
 };
-//nuevo recargo o interes ESTE SE ELIMINARA O NO SE UTILIZARA
 
-const editarRecargoCuota = async (req, res) => {
+// ==========================================
+// ✏️ EDITAR RECARGO
+// ==========================================
+const editarRecargo = async (req, res) => {
     try {
-        const { idVenta, numeroCuota } = req.params;
-        const {
-            nuevoMontoRecargo,  // Puede ser 0 para eliminar el recargo
-            motivo,
-            usuario,
-            fechaRecargo      // Opcional, si quieren poner fecha específica
-        } = req.body;
+        const { idVenta, numeroCuota, idRecargo } = req.params;
+        const { monto, motivo, usuario } = req.body;
 
         // ==========================================
         // VALIDACIONES
         // ==========================================
-        // Validar que el monto no sea negativo
-        if (nuevoMontoRecargo === undefined || nuevoMontoRecargo === null) {
+        if (!idVenta || !numeroCuota || !idRecargo) {
             return res.status(400).json({
                 ok: false,
-                message: 'El monto del recargo es obligatorio'
+                message: 'Faltan parámetros (idVenta, numeroCuota, idRecargo)'
             });
         }
 
-        if (nuevoMontoRecargo < 0) {
+        if (monto === undefined && motivo === undefined) {
             return res.status(400).json({
                 ok: false,
-                message: 'El recargo no puede ser negativo'
+                message: 'Debe enviar al menos un campo a modificar (monto o motivo)'
             });
         }
 
-        if (!usuario || !usuario.nombre) {
+        if (monto !== undefined && (isNaN(monto) || monto < 0)) {
             return res.status(400).json({
                 ok: false,
-                message: 'El nombre del usuario es obligatorio'
+                message: 'El monto debe ser un número mayor o igual a 0'
             });
         }
 
@@ -931,119 +792,229 @@ const editarRecargoCuota = async (req, res) => {
         if (!cuota) {
             return res.status(404).json({
                 ok: false,
-                message: `Cuota número ${numeroCuota} no encontrada`
+                message: `Cuota ${numeroCuota} no encontrada`
             });
         }
 
         // ==========================================
-        // VALIDAR ESTADO DE LA CUOTA
+        // BUSCAR RECARGO
         // ==========================================
-        if (cuota.estado_cuota === 'pagada') {
-            return res.status(400).json({
+        const recargo = cuota.recargos.id(idRecargo);
+
+        if (!recargo) {
+            return res.status(404).json({
                 ok: false,
-                message: 'No se puede modificar recargo de una cuota ya pagada'
+                message: 'Recargo no encontrado'
             });
         }
 
         // ==========================================
-        // GUARDAR RECARGO ANTERIOR
+        // GUARDAR VALORES ANTERIORES
         // ==========================================
-        const recargoAnterior = cuota.recargo?.monto || 0;
-        const motivoAnterior = cuota.recargo?.motivo || 'Sin recargo previo';
-        const diferencia = nuevoMontoRecargo - recargoAnterior;
+        const montoAnterior = recargo.monto;
+        const motivoAnterior = recargo.motivo;
+
+        const cambios = [];
 
         // ==========================================
-        // ACTUALIZAR RECARGO
+        // ACTUALIZAR CAMPOS (solo los que vienen)
         // ==========================================
-        // Si el nuevo recargo es 0, limpiar el objeto (opcional)
-        if (nuevoMontoRecargo === 0) {
-            cuota.recargo = {
-                monto: 0,
-                motivo: 'Recargo eliminado',
-                fecha: new Date(),
-                usuario: { nombre: usuario.nombre }
-            };
-        } else {
-            // Actualizar con los nuevos datos
-            cuota.recargo = {
-                monto: nuevoMontoRecargo,
-                motivo: motivo || 'Recargo por mora',  // Motivo por defecto si no se especifica
-                fecha: fechaRecargo || new Date(),
-                usuario: {
-                    nombre: usuario.nombre
-                }
-            };
+        if (monto !== undefined) {
+            recargo.monto = monto;
+            cambios.push(`monto: $${montoAnterior} → $${monto}`);
+        }
+
+        if (motivo !== undefined && motivo.trim() !== '') {
+            recargo.motivo = motivo.trim();
+            cambios.push(`motivo: "${motivoAnterior}" → "${motivo.trim()}"`);
         }
 
         // ==========================================
-        // ACTUALIZAR MONTO TOTAL DE LA CUOTA
-        // ¡IMPORTANTE! El montoCuota + recargo = lo que debe pagar
-        // ==========================================
-        // El montoCuota no se toca, solo se actualiza el recargo
-        // El total a pagar de esta cuota sería: montoCuota + recargo.monto
-
-        // Pero si queremos actualizar el montoTotal de la VENTA:
-        // Solo si el recargo afecta el total de la venta
-        // En tu modelo, el montoTotal es el valor del producto, 
-        // los recargos son adicionales, así que NO deberían modificar montoTotal
-        // (Deberías tener otro campo como "totalConRecargos" o calcularlo en el frontend)
-
-        // ==========================================
-        // AGREGAR NOTA DE HISTORIAL
+        // FECHA Y USUARIO DE MODIFICACIÓN
         // ==========================================
         const fechaArgentina = new Date(new Date().toLocaleString('en-US', {
             timeZone: 'America/Argentina/Buenos_Aires'
         }));
 
-        let textoNota = '';
-        if (nuevoMontoRecargo === 0) {
-            textoNota = `[RECARGO ELIMINADO] Recargo anterior: $${recargoAnterior.toLocaleString('es-AR')} (Motivo: ${motivoAnterior}). Eliminado por: ${usuario.nombre}`;
-        } else {
-            textoNota = `[RECARGO ACTUALIZADO] $${recargoAnterior.toLocaleString('es-AR')} → $${nuevoMontoRecargo.toLocaleString('es-AR')} (Diferencia: $${diferencia.toLocaleString('es-AR')}). Motivo: ${motivo || 'Sin especificar'}. Usuario: ${usuario.nombre}`;
-        }
+        const nombreUsuario = usuario?.nombre || req.usuario?.nombre || 'Sistema';
 
+        // ==========================================
+        // AGREGAR NOTA DE TRAZABILIDAD EN LA CUOTA
+        // ==========================================
         cuota.notas.push({
-            texto: textoNota,
+            texto: `[RECARGO EDITADO] Recargo modificado por ${nombreUsuario}. Cambios: ${cambios.join(' | ')}.`,
             fecha: fechaArgentina,
             usuario: {
-                nombre: usuario.nombre
+                nombre: nombreUsuario
             }
         });
 
         // ==========================================
-        // RECALCULAR ESTADO DE LA CUOTA (opcional)
+        // GUARDAR
         // ==========================================
-        // Si el recargo se aplica, podrías querer actualizar el estado de la cuota
-        // Por ejemplo, si tiene recargo, cambiar a "con mora" o algo similar
-        // Pero manteniendo el estado original
-
         await venta.save();
 
-        // ==========================================
-        // RESPONDER
-        // ==========================================
         return res.status(200).json({
             ok: true,
-            message: nuevoMontoRecargo === 0 ? 'Recargo eliminado exitosamente' : 'Recargo actualizado exitosamente',
+            message: 'Recargo editado exitosamente',
             data: {
+                ventaId: venta._id,
                 numeroCuota: cuota.numeroCuota,
-                recargoAnterior,
-                recargoNuevo: nuevoMontoRecargo,
-                diferencia,
-                motivo: cuota.recargo.motivo,
-                fechaRecargo: cuota.recargo.fecha,
-                estadoCuota: cuota.estado_cuota,
-                montoCuota: cuota.montoCuota,
-                totalCuotaConRecargo: cuota.montoCuota + cuota.recargo.monto,
-                notas: cuota.notas
+                recargo: {
+                    _id: recargo._id,
+                    monto: recargo.monto,
+                    motivo: recargo.motivo,
+                    fecha: recargo.fecha,
+                    diasAtraso: recargo.diasAtraso,
+                    porcentajeAplicado: recargo.porcentajeAplicado,
+                    usuario: recargo.usuario
+                },
+                montoAnterior,
+                motivoAnterior,
+                cambios
             }
         });
 
     } catch (error) {
-        console.error('Error al editar recargo de cuota:', error);
+        console.error('Error al editar recargo:', error);
+
+        if (error.name === 'CastError') {
+            return res.status(400).json({
+                ok: false,
+                message: 'ID de venta o recargo inválido'
+            });
+        }
+
         return res.status(500).json({
             ok: false,
             message: `Error al editar recargo: ${error.message}`
+        });
+    }
+};
+
+// ==========================================
+// 🗑️ ELIMINAR RECARGO
+// ==========================================
+const eliminarRecargo = async (req, res) => {
+    try {
+        const { idVenta, numeroCuota, idRecargo } = req.params;
+        const { motivo, usuario } = req.body;
+
+        // ==========================================
+        // VALIDACIONES
+        // ==========================================
+        if (!idVenta || !numeroCuota || !idRecargo) {
+            return res.status(400).json({
+                ok: false,
+                message: 'Faltan parámetros (idVenta, numeroCuota, idRecargo)'
+            });
+        }
+
+        if (!motivo || motivo.trim() === '') {
+            return res.status(400).json({
+                ok: false,
+                message: 'El motivo de la eliminación es obligatorio'
+            });
+        }
+
+        // ==========================================
+        // BUSCAR VENTA Y CUOTA
+        // ==========================================
+        const venta = await Venta.findById(idVenta);
+
+        if (!venta) {
+            return res.status(404).json({
+                ok: false,
+                message: 'Venta no encontrada'
+            });
+        }
+
+        const cuota = venta.cuotas.find(c => c.numeroCuota === Number(numeroCuota));
+
+        if (!cuota) {
+            return res.status(404).json({
+                ok: false,
+                message: `Cuota ${numeroCuota} no encontrada`
+            });
+        }
+
+        // ==========================================
+        // BUSCAR RECARGO
+        // ==========================================
+        const recargo = cuota.recargos.id(idRecargo);
+
+        if (!recargo) {
+            return res.status(404).json({
+                ok: false,
+                message: 'Recargo no encontrado'
+            });
+        }
+
+        // ==========================================
+        // GUARDAR DATOS ANTES DE ELIMINAR (para trazabilidad)
+        // ==========================================
+        const recargoEliminado = {
+            monto: recargo.monto,
+            motivo: recargo.motivo,
+            fecha: recargo.fecha,
+            diasAtraso: recargo.diasAtraso,
+            porcentajeAplicado: recargo.porcentajeAplicado,
+            usuario: recargo.usuario
+        };
+
+        const fechaArgentina = new Date(new Date().toLocaleString('en-US', {
+            timeZone: 'America/Argentina/Buenos_Aires'
+        }));
+
+        const nombreUsuario = usuario?.nombre || req.usuario?.nombre || 'Sistema';
+
+        // ==========================================
+        // ELIMINAR RECARGO
+        // ==========================================
+        cuota.recargos.pull(idRecargo);
+
+        // ==========================================
+        // AGREGAR NOTA DE TRAZABILIDAD
+        // ==========================================
+        cuota.notas.push({
+            texto: `[RECARGO ELIMINADO] Se eliminó un recargo de $${recargoEliminado.monto}. Motivo original: "${recargoEliminado.motivo}". Motivo de eliminación: "${motivo.trim()}". Eliminado por: ${nombreUsuario}.`,
+            fecha: fechaArgentina,
+            usuario: {
+                nombre: nombreUsuario
+            }
+        });
+
+        // ==========================================
+        // GUARDAR
+        // ==========================================
+        await venta.save();
+
+        return res.status(200).json({
+            ok: true,
+            message: 'Recargo eliminado exitosamente',
+            data: {
+                ventaId: venta._id,
+                numeroCuota: cuota.numeroCuota,
+                recargoEliminado,
+                motivoEliminacion: motivo.trim(),
+                eliminadoPor: nombreUsuario,
+                fechaEliminacion: fechaArgentina
+            }
+        });
+
+    } catch (error) {
+        console.error('Error al eliminar recargo:', error);
+
+        if (error.name === 'CastError') {
+            return res.status(400).json({
+                ok: false,
+                message: 'ID de venta o recargo inválido'
+            });
+        }
+
+        return res.status(500).json({
+            ok: false,
+            message: `Error al eliminar recargo: ${error.message}`
         });
     }
 };
@@ -1571,7 +1542,11 @@ module.exports = {
     ////////////
     editarFechaCuota,
     editarMontoCuota,
+    ////////////////////
     agregarRecargoACuota,
+    editarRecargo,
+    eliminarRecargo,
+
     cambiarEstadoCuota,
     agregarNotaCuota
 

@@ -145,3 +145,5 @@ app.use("/canje", require('./Rutes/Canjes'))
 
 //para el cron de actualización automática
 app.use("/api/cron", require('./Rutes/Cron'))
+
+app.use("/documentos", require('./Rutes/Doc'))

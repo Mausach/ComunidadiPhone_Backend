@@ -24,6 +24,15 @@ const ventaSchema = new Schema({
         trim: true
     },
 
+      // ==========================================
+    // NÚMERO DE CONTRATO
+    // ==========================================
+    numeroContrato: {
+        type: Number,
+        unique: true,
+        sparse: true // Permite que las ventas viejas sin número no den error
+    },
+
     // ==========================================
     // TIPO DE VENTA (flexible, no enum rígido)
     // ==========================================
@@ -248,7 +257,7 @@ const ventaSchema = new Schema({
             default: 0
         },
 
-        // 👉 NUEVO: Array de recargos por atraso/mora (HISTÓRICO)
+        
         recargos: [{
             monto: {
                 type: Number,
@@ -331,6 +340,18 @@ const ventaSchema = new Schema({
     }
 });
 
+// ==========================================
+// VIRTUALES (Campos calculados que no se guardan en BD)
+// ==========================================
+ventaSchema.virtual('numeroContratoFormateado').get(function() {
+    if (!this.numeroContrato) return null;
+    // Convierte a string y rellena con ceros a la izquierda hasta 5 dígitos
+    return this.numeroContrato.toString().padStart(5, '0');
+});
+
+// Asegurate de que los virtuals se incluyan cuando se convierta a JSON
+ventaSchema.set('toJSON', { virtuals: true });
+ventaSchema.set('toObject', { virtuals: true });
 
 // ==========================================
 // EXPORTACIÓN

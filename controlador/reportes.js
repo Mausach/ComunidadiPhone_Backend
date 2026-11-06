@@ -1406,11 +1406,38 @@ const resumenGeneral = async (req, res) => {
 };
 
 
+
 // ==========================================
 // 📊 REPORTE DE VENTAS DIRECTAS Y PLAN CANJE
 // ==========================================
 const reporteVentasDirectasCanje = async (req, res) => {
     try {
+        const { anio } = req.query;
+
+        // ==========================================
+        // VALIDAR AÑO
+        // ==========================================
+        if (!anio) {
+            return res.status(400).json({
+                ok: false,
+                message: 'El año es obligatorio'
+            });
+        }
+
+        const anioNum = parseInt(anio);
+        if (isNaN(anioNum) || anioNum < 2000 || anioNum > 2100) {
+            return res.status(400).json({
+                ok: false,
+                message: 'Año inválido'
+            });
+        }
+
+        // ==========================================
+        // RANGO DEL AÑO (UTC-3)
+        // ==========================================
+        const fechaInicio = new Date(Date.UTC(anioNum, 0, 1, 3, 0, 0));
+        const fechaFin = new Date(Date.UTC(anioNum + 1, 0, 1, 2, 59, 59, 999));
+
         // ==========================================
         // 1. VENTAS POR TIPO (contado y plan_canje)
         // ==========================================
@@ -1418,7 +1445,8 @@ const reporteVentasDirectasCanje = async (req, res) => {
             { 
                 $match: { 
                     estado: true,
-                    tipoVenta: { $in: ['contado', 'plan_canje'] }
+                    tipoVenta: { $in: ['contado', 'plan_canje'] },
+                    fechaRealizada: { $gte: fechaInicio, $lte: fechaFin }
                 } 
             },
             {
@@ -1431,7 +1459,6 @@ const reporteVentasDirectasCanje = async (req, res) => {
             }
         ]);
 
-        // Extraer resultados
         const ventasContado = ventasPorTipo.find(v => v._id === 'contado') || { cantidad: 0, totalMontoPagado: 0, totalDescuentos: 0 };
         const ventasPlanCanje = ventasPorTipo.find(v => v._id === 'plan_canje') || { cantidad: 0, totalMontoPagado: 0, totalDescuentos: 0 };
 
@@ -1459,11 +1486,12 @@ const reporteVentasDirectasCanje = async (req, res) => {
         const cantidadCanjeDisponibles = valorTasadoCanjes[0]?.cantidadEquiposCanje || 0;
 
         // ==========================================
-        // 3. LISTAR TODAS LAS VENTAS (contado + plan_canje)
+        // 3. LISTAR VENTAS DEL AÑO (contado + plan_canje)
         // ==========================================
         const ventas = await Venta.find({
             estado: true,
-            tipoVenta: { $in: ['contado', 'plan_canje'] }
+            tipoVenta: { $in: ['contado', 'plan_canje'] },
+            fechaRealizada: { $gte: fechaInicio, $lte: fechaFin }
         })
         .select('cliente localidad tipoVenta fechaRealizada fechaEntrega vendedor producto montoTotal montoPagado descuentos pagos notas conducta_pago')
         .sort({ fechaRealizada: -1 })
@@ -1476,10 +1504,10 @@ const reporteVentasDirectasCanje = async (req, res) => {
             origen: 'canje',
             ventaOrigen: { $ne: null }
         })
-        .select('ventaOrigen nombre modelo capacidad valorTasado estado')
+        // 👉 FIX 1: Agregado 'imei' al select
+        .select('ventaOrigen nombre modelo capacidad imei valorTasado estado')
         .lean();
 
-        // Crear mapa de equipos canje por ventaOrigen
         const mapaEquiposCanje = {};
         equiposCanje.forEach(equipo => {
             const ventaId = equipo.ventaOrigen.toString();
@@ -1490,22 +1518,53 @@ const reporteVentasDirectasCanje = async (req, res) => {
                 nombre: equipo.nombre,
                 modelo: equipo.modelo || '',
                 capacidad: equipo.capacidad || '',
+                imei: equipo.imei || '',   // 👉 FIX 2: Agregado imei
                 valorTasado: equipo.valorTasado,
                 estado: equipo.estado || ''
             });
         });
 
         // ==========================================
-        // 3.2 METODOS DE PAGO POR VENTA
+        // 3.2 INICIALIZAR RESUMEN ANUAL (12 meses)
+        // ==========================================
+        const nombresMeses = [
+            'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+            'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+        ];
+
+        const resumenAnual = nombresMeses.map((nombre, index) => ({
+            mes: index + 1,
+            nombre,
+            cantidadVentas: 0,
+            totalVentas: 0,
+            totalCobrado: 0,
+            totalPendiente: 0,
+            totalDescuentos: 0,
+            contado: {
+                cantidad: 0,
+                totalMontoPagado: 0,
+                totalDescuentos: 0
+            },
+            plan_canje: {
+                cantidad: 0,
+                totalMontoPagado: 0,
+                totalDescuentos: 0
+            }
+        }));
+
+        // ==========================================
+        // 3.3 MÉTODOS DE PAGO POR VENTA
         // ==========================================
         const metodosPagoTotales = {};
 
-        // Formatear ventas con datos calculados
+        // ==========================================
+        // 3.4 FORMATEAR VENTAS + ARMAR RESUMEN MENSUAL
+        // ==========================================
         const ventasFormateadas = ventas.map(venta => {
             const totalDescuentos = (venta.descuentos || []).reduce((sum, d) => sum + d.monto, 0);
             const totalPagos = (venta.pagos || []).reduce((sum, p) => sum + p.monto, 0);
 
-            // Obtener equipos canje asociados a esta venta
+            // Equipos canje asociados
             const equiposCanjeVenta = mapaEquiposCanje[venta._id.toString()] || [];
             const totalValorTasadoVenta = equiposCanjeVenta.reduce((sum, eq) => sum + eq.valorTasado, 0);
 
@@ -1518,6 +1577,33 @@ const reporteVentasDirectasCanje = async (req, res) => {
                 metodosPagoTotales[metodo] += pago.monto;
             });
 
+            // ==========================================
+            // ACUMULAR EN EL RESUMEN MENSUAL
+            // ==========================================
+            const fechaVenta = new Date(venta.fechaRealizada);
+            const mesVenta = fechaVenta.getMonth();  // 0-11
+
+            const montoPagado = venta.montoPagado || 0;
+            const montoPendiente = venta.montoTotal - montoPagado;
+
+            // Totales generales del mes
+            resumenAnual[mesVenta].cantidadVentas++;
+            resumenAnual[mesVenta].totalVentas += venta.montoTotal;
+            resumenAnual[mesVenta].totalCobrado += montoPagado;
+            resumenAnual[mesVenta].totalPendiente += montoPendiente;
+            resumenAnual[mesVenta].totalDescuentos += totalDescuentos;
+
+            // Totales por tipo
+            if (venta.tipoVenta === 'contado') {
+                resumenAnual[mesVenta].contado.cantidad++;
+                resumenAnual[mesVenta].contado.totalMontoPagado += montoPagado;
+                resumenAnual[mesVenta].contado.totalDescuentos += totalDescuentos;
+            } else if (venta.tipoVenta === 'plan_canje') {
+                resumenAnual[mesVenta].plan_canje.cantidad++;
+                resumenAnual[mesVenta].plan_canje.totalMontoPagado += montoPagado;
+                resumenAnual[mesVenta].plan_canje.totalDescuentos += totalDescuentos;
+            }
+
             return {
                 _id: venta._id,
                 cliente: venta.cliente,
@@ -1528,8 +1614,8 @@ const reporteVentasDirectasCanje = async (req, res) => {
                 vendedor: venta.vendedor || '',
                 producto: venta.producto,
                 montoTotal: venta.montoTotal,
-                montoPagado: venta.montoPagado || 0,
-                montoPendiente: venta.montoTotal - (venta.montoPagado || 0),
+                montoPagado,
+                montoPendiente,
                 totalDescuentos,
                 totalPagos,
                 cantidadPagos: (venta.pagos || []).length,
@@ -1550,31 +1636,51 @@ const reporteVentasDirectasCanje = async (req, res) => {
                     usuario: n.usuario?.nombre || ''
                 })),
                 conducta_pago: venta.conducta_pago,
-                // 👉 NUEVO: Equipos canje asociados
                 equiposCanje: equiposCanjeVenta,
                 totalValorTasadoVenta,
-                // 👉 NUEVO: Monto pendiente real (descontando canje)
-                montoPendienteReal: venta.montoTotal - (venta.montoPagado || 0) - totalValorTasadoVenta
+                montoPendienteReal: montoPendiente - totalValorTasadoVenta
             };
         });
 
         // ==========================================
-        // 4. TOTALES FINALES
+        // 4. TOTALES ANUALES
         // ==========================================
-        const totalVentas = ventasContado.cantidad + ventasPlanCanje.cantidad;
-        const totalMontoPagado = ventasContado.totalMontoPagado + ventasPlanCanje.totalMontoPagado;
-        const totalDescuentosGeneral = ventasContado.totalDescuentos + ventasPlanCanje.totalDescuentos;
+        const totalesAnuales = resumenAnual.reduce((acc, mes) => {
+            acc.cantidadVentas += mes.cantidadVentas;
+            acc.totalVentas += mes.totalVentas;
+            acc.totalCobrado += mes.totalCobrado;
+            acc.totalPendiente += mes.totalPendiente;
+            acc.totalDescuentos += mes.totalDescuentos;
+            acc.contado.cantidad += mes.contado.cantidad;
+            acc.contado.totalMontoPagado += mes.contado.totalMontoPagado;
+            acc.contado.totalDescuentos += mes.contado.totalDescuentos;
+            acc.plan_canje.cantidad += mes.plan_canje.cantidad;
+            acc.plan_canje.totalMontoPagado += mes.plan_canje.totalMontoPagado;
+            acc.plan_canje.totalDescuentos += mes.plan_canje.totalDescuentos;
+            return acc;
+        }, {
+            cantidadVentas: 0,
+            totalVentas: 0,
+            totalCobrado: 0,
+            totalPendiente: 0,
+            totalDescuentos: 0,
+            contado: { cantidad: 0, totalMontoPagado: 0, totalDescuentos: 0 },
+            plan_canje: { cantidad: 0, totalMontoPagado: 0, totalDescuentos: 0 }
+        });
 
         // ==========================================
         // RESPUESTA
         // ==========================================
         return res.status(200).json({
             ok: true,
-            message: 'Reporte de ventas directas y plan canje',
+            message: `Reporte de ventas directas y plan canje ${anioNum}`,
             data: {
+                anio: anioNum,
+                resumenAnual,
+                totalesAnuales,
                 ventas: ventasFormateadas,
                 resumen: {
-                    totalVentas,
+                    totalVentas: ventasContado.cantidad + ventasPlanCanje.cantidad,
                     contado: {
                         cantidad: ventasContado.cantidad,
                         montoPagado: ventasContado.totalMontoPagado,
@@ -1586,11 +1692,10 @@ const reporteVentasDirectasCanje = async (req, res) => {
                         descuentos: ventasPlanCanje.totalDescuentos
                     },
                     totales: {
-                        montoPagado: totalMontoPagado,
-                        descuentos: totalDescuentosGeneral,
+                        montoPagado: ventasContado.totalMontoPagado + ventasPlanCanje.totalMontoPagado,
+                        descuentos: ventasContado.totalDescuentos + ventasPlanCanje.totalDescuentos,
                         valorTasadoCanjes: totalValorTasado,
                         cantidadCanjeDisponibles,
-                        // 👉 NUEVO: Métodos de pago
                         metodosPago: metodosPagoTotales
                     }
                 }
@@ -1867,9 +1972,13 @@ const reporteVentasFinanciadas = async (req, res) => {
 // ==========================================
 // 📋 LISTAR CLIENTES (con filtros y paginación)
 // ==========================================
+// ==========================================
+// 📋 LISTAR CLIENTES (con filtros y paginación)
+// ==========================================
 const listarClientes = async (req, res) => {
     try {
         const {
+            busqueda,           // 👈 Búsqueda global inteligente
             nombre,
             apellido,
             dni,
@@ -1885,52 +1994,124 @@ const listarClientes = async (req, res) => {
         // CONSTRUIR FILTROS
         // ==========================================
         const filtros = {};
+        const condicionesAnd = [];  // 👈 Acumulador de condiciones $and
 
+        // ==========================================
+        // 👉 BÚSQUEDA INTELIGENTE
+        // ==========================================
+        // Acepta: "VANESA CALO", "CALO VANESA", "VANESA", "CALO", DNI, etc.
+        // Cada palabra debe coincidir en nombre, apellido o dni
+        const terminoBusqueda = (busqueda && busqueda.trim() !== '') 
+            ? busqueda.trim() 
+            : (nombre && nombre.trim() !== '') 
+                ? nombre.trim() 
+                : null;
+
+        if (terminoBusqueda) {
+            // Dividir por espacios (soporta múltiples espacios)
+            const palabras = terminoBusqueda
+                .split(/\s+/)
+                .filter(p => p.length > 0);
+
+            if (palabras.length > 0) {
+                // Cada palabra debe aparecer en algún campo (nombre, apellido o dni)
+                const condicionesPalabras = palabras.map(palabra => {
+                    const rx = new RegExp(
+                        palabra.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+                        'i'
+                    );
+                    return {
+                        $or: [
+                            { nombre: rx },
+                            { apellido: rx },
+                            { dni: rx }
+                        ]
+                    };
+                });
+                condicionesAnd.push(...condicionesPalabras);
+            }
+        }
+
+        // ==========================================
+        // FILTROS INDIVIDUALES (por si el front los envía)
+        // ==========================================
+
+        // Apellido explícito (separado del buscador global)
+        if (apellido && apellido.trim() !== '') {
+            const rxApellido = new RegExp(
+                apellido.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+                'i'
+            );
+            condicionesAnd.push({ apellido: rxApellido });
+        }
+
+        // DNI explícito (separado del buscador global)
+        if (dni && dni.trim() !== '') {
+            const rxDni = new RegExp(
+                dni.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+                'i'
+            );
+            condicionesAnd.push({ dni: rxDni });
+        }
+
+        // Email
+        if (email && email.trim() !== '') {
+            const rxEmail = new RegExp(
+                email.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+                'i'
+            );
+            condicionesAnd.push({ email: rxEmail });
+        }
+
+        // Teléfono (busca en telefono o telefono2)
+        if (telefono && telefono.trim() !== '') {
+            const rxTelefono = new RegExp(
+                telefono.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+                'i'
+            );
+            condicionesAnd.push({
+                $or: [
+                    { telefono: rxTelefono },
+                    { telefono2: rxTelefono }
+                ]
+            });
+        }
+
+        // Activo
         if (activo !== undefined && activo !== '') {
             filtros.activo = activo === 'true';
         }
 
-        if (nombre) {
-            filtros.nombre = { $regex: nombre, $options: 'i' };
-        }
-
-        if (apellido) {
-            filtros.apellido = { $regex: apellido, $options: 'i' };
-        }
-
-        if (dni) {
-            filtros.dni = { $regex: dni, $options: 'i' };
-        }
-
-        if (email) {
-            filtros.email = { $regex: email, $options: 'i' };
-        }
-
-        if (telefono) {
-            filtros.$or = [
-                { telefono: { $regex: telefono, $options: 'i' } },
-                { telefono2: { $regex: telefono, $options: 'i' } }
-            ];
-        }
-
+        // Situación crediticia
         if (situacionCrediticia !== undefined && situacionCrediticia !== '') {
-            filtros.situacionCrediticia = parseInt(situacionCrediticia);
+            const situacionNum = parseInt(situacionCrediticia);
+            if (!isNaN(situacionNum)) {
+                filtros.situacionCrediticia = situacionNum;
+            }
+        }
+
+        // ==========================================
+        // COMBINAR CONDICIONES CON $and (si hay)
+        // ==========================================
+        if (condicionesAnd.length > 0) {
+            filtros.$and = condicionesAnd;
         }
 
         // ==========================================
         // PAGINACIÓN
         // ==========================================
-        const skip = (parseInt(pagina) - 1) * parseInt(limite);
-        const limit = parseInt(limite);
+        const paginaNum = parseInt(pagina) || 1;
+        const limiteNum = parseInt(limite) || 50;
+        const skip = (paginaNum - 1) * limiteNum;
 
         // ==========================================
         // CONSULTAR
         // ==========================================
         const [clientes, total] = await Promise.all([
             Cliente.find(filtros)
-                .sort({ apellido: 1, nombre: 1 })  // Ordenar por apellido
+                .sort({ apellido: 1, nombre: 1 })
                 .skip(skip)
-                .limit(limit)
+                .limit(limiteNum)
                 .lean(),
             Cliente.countDocuments(filtros)
         ]);
@@ -1956,7 +2137,7 @@ const listarClientes = async (req, res) => {
         }));
 
         // ==========================================
-        // RESUMEN
+        // RESUMEN (sin filtros, para totales generales)
         // ==========================================
         const resumen = await Cliente.aggregate([
             {
@@ -1973,14 +2154,18 @@ const listarClientes = async (req, res) => {
             }
         ]);
 
-        const resumenClientes = resumen[0] || { totalClientes: 0, totalActivos: 0, totalInactivos: 0 };
+        const resumenClientes = resumen[0] || { 
+            totalClientes: 0, 
+            totalActivos: 0, 
+            totalInactivos: 0 
+        };
 
         // ==========================================
-        // PAGINACIÓN
+        // PAGINACIÓN FINAL
         // ==========================================
-        const totalPaginas = Math.ceil(total / limit);
-        const hayMas = parseInt(pagina) < totalPaginas;
-        const restantes = Math.max(0, total - (parseInt(pagina) * limit));
+        const totalPaginas = Math.ceil(total / limiteNum);
+        const hayMas = paginaNum < totalPaginas;
+        const restantes = Math.max(0, total - (paginaNum * limiteNum));
 
         return res.status(200).json({
             ok: true,
@@ -1989,8 +2174,8 @@ const listarClientes = async (req, res) => {
                 clientes: clientesFormateados,
                 paginacion: {
                     total,
-                    pagina: parseInt(pagina),
-                    limite: limit,
+                    pagina: paginaNum,
+                    limite: limiteNum,
                     totalPaginas,
                     hayMas,
                     restantes
@@ -2314,18 +2499,24 @@ const reportesVentasCeo = async (req, res) => {
             localidad,
             conducta,
             busqueda,
+            dni,            // 👉 NUEVO: filtro por DNI de cliente
             pagina = 1,
             limite = 15
         } = req.query;
 
         // ==========================================
-        // FILTROS (igual que antes)
+        // FILTROS
         // ==========================================
         const filtros = { estado: true };
 
         if (tipoVenta && tipoVenta.trim() !== '') filtros.tipoVenta = tipoVenta.trim();
         if (localidad && localidad.trim() !== '') filtros.localidad = localidad.toLowerCase().trim();
         if (conducta && conducta.trim() !== '') filtros.conducta_pago = conducta.trim();
+
+        // 👉 NUEVO: Filtro por DNI del cliente
+        if (dni && dni.trim() !== '') {
+            filtros['cliente.dni'] = dni.trim();
+        }
 
         if (busqueda && busqueda.trim() !== '') {
             const busquedaTrim = busqueda.trim();
@@ -2352,7 +2543,7 @@ const reportesVentasCeo = async (req, res) => {
                 .sort({ fechaRealizada: -1 })
                 .skip(skip)
                 .limit(limiteNum)
-                .lean(),  // 👈 SIN select → trae TODOS los campos
+                .lean(),
             Venta.countDocuments(filtros)
         ]);
 
@@ -2372,7 +2563,6 @@ const reportesVentasCeo = async (req, res) => {
         const ventasFormateadas = ventas.map(venta => {
             const tieneCuotas = venta.tipoVenta === 'sistema1' || venta.tipoVenta === 'sistema2';
 
-            // Calcular resumen de cuotas (extra para el front)
             let cuotasResumen = null;
             if (tieneCuotas && venta.cuotas && venta.cuotas.length > 0) {
                 const totalCuotas = venta.cuotas.length;
@@ -2387,24 +2577,15 @@ const reportesVentasCeo = async (req, res) => {
             }
 
             return {
-                // 👇 TODO el documento original
                 ...venta,
-
-                // 👇 Campos calculados para el front
                 tipoVentaLabel: tipoVentaLabels[venta.tipoVenta] || venta.tipoVenta,
                 tieneCuotas,
                 montoPendiente: (venta.montoTotal || 0) - (venta.montoPagado || 0),
-
-                // 👇 Array completo (por seguridad, si no existía)
                 cuotas: venta.cuotas || [],
                 pagos: venta.pagos || [],
                 descuentos: venta.descuentos || [],
                 notas: venta.notas || [],
-
-                // 👇 Resumen para la barra de progreso
                 cuotasResumen,
-
-                // 👇 Documentación asegurada
                 documentacion: venta.documentacion || {
                     urlCarpeta: null,
                     fechaSubida: null,

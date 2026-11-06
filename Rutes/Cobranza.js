@@ -9,7 +9,7 @@ const express = require('express');
 const { check } = require('express-validator');
 
 
-const { listarVentasCobranza, detalleVentaCobranza, cobrarCuotas, editarFechaCuota, editarMontoCuota, cambiarEstadoCuota, agregarNotaCuota, listarCobranzasDelDia, editarRecargoCuota, agregarRecargoACuota } = require('../controlador/cobranza');
+const { listarVentasCobranza, detalleVentaCobranza, cobrarCuotas, editarFechaCuota, editarMontoCuota, cambiarEstadoCuota, agregarNotaCuota, listarCobranzasDelDia, editarRecargoCuota, agregarRecargoACuota, editarRecargo, eliminarRecargo } = require('../controlador/cobranza');
 const { validarJWTCobranza } = require('../midelwaresdefin/ValidarJWT_cobranza');
 
 const routerCob = express.Router();
@@ -30,6 +30,12 @@ routerCob.put('/cuotas/:idVenta/:numeroCuota/monto',validarJWTCobranza ,editarMo
 routerCob.post('/cuotas/:idVenta/:numeroCuota/recargo', validarJWTCobranza, agregarRecargoACuota);
 routerCob.put('/cuotas/:idVenta/:numeroCuota/estado',validarJWTCobranza, cambiarEstadoCuota);
 routerCob.post('/cuotas/:idVenta/:numeroCuota/nota',validarJWTCobranza, agregarNotaCuota);
+
+// ✏️ Editar recargo
+routerCob.put('/:idVenta/:numeroCuota/recargo/:idRecargo', editarRecargo);
+
+// 🗑️ Eliminar recargo
+routerCob.delete('/:idVenta/:numeroCuota/recargo/:idRecargo', eliminarRecargo);
 
 
 module.exports = routerCob;

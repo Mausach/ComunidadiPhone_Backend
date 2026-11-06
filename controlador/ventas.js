@@ -1,4 +1,5 @@
 const Cliente = require("../modelos/Cliente");
+const Contador = require("../modelos/Contador");
 const Equipos = require("../modelos/Equipos");
 const EquipoStock = require("../modelos/EquipoStock");
 const EqupoCanjes = require("../modelos/EqupoCanjes");
@@ -211,6 +212,24 @@ const calcularProximaFecha = (fecha, frecuencia, numeroCuota) => {
     return nuevaFecha;
 };
 
+
+const generarNumeroContrato = async () => {
+    try {
+        // Busca el contador, si no existe lo crea en 1, si existe le suma 1
+        // { new: true } devuelve el documento ya actualizado
+        const contador = await Contador.findOneAndUpdate(
+            { _id: 'contrato' },
+            { $inc: { secuencia: 1 } },
+            { new: true, upsert: true }
+        );
+
+        return contador.secuencia;
+    } catch (error) {
+        console.error('Error al generar número de contrato:', error);
+        throw new Error('No se pudo generar el número de contrato');
+    }
+};
+
 // ==========================================
 // 📝 CREAR VENTA (Método Unificado)
 // ==========================================
@@ -247,6 +266,17 @@ const crearVenta2 = async (req, res) => {
         const fechaEntregaARG = fechaEntrega
             ? new Date(fechaEntrega + 'T00:00:00-03:00')
             : null;
+
+        // ==========================================
+        // 👉 NUEVA DIRECTIVA: Salto de mes condicional
+        // Si la venta es el 27 o posterior, la primera cuota se salta un mes.
+        // ==========================================
+        const fechaInicioCuotas = new Date(fechaRealizadaARG);
+        const diaDeLaVenta = fechaInicioCuotas.getDate();
+
+        if (diaDeLaVenta >= 27) {
+            fechaInicioCuotas.setMonth(fechaInicioCuotas.getMonth() + 1);
+        }
 
         // ==========================================
         // VALIDACIONES BÁSICAS
@@ -400,7 +430,7 @@ const crearVenta2 = async (req, res) => {
                 cuotasGeneradas = generarCuotas({
                     montoCuota,
                     cantidadCuotas,
-                    fechaInicio: fechaRealizadaARG,
+                    fechaInicio: fechaInicioCuotas, // 👈 Usamos la fecha condicionada
                     frecuencia: frecuencia || 'mensual'
                 });
 
@@ -419,7 +449,7 @@ const crearVenta2 = async (req, res) => {
                 cuotasGeneradas = generarCuotas({
                     montoCuota,
                     cantidadCuotas,
-                    fechaInicio: fechaRealizadaARG,
+                    fechaInicio: fechaInicioCuotas, // 👈 Usamos la fecha condicionada
                     frecuencia: frecuencia || 'mensual'
                 });
 
@@ -523,9 +553,15 @@ const crearVenta2 = async (req, res) => {
         };
 
         // ==========================================
+        // 🔢 GENERAR NÚMERO DE CONTRATO
+        // ==========================================
+        const numeroContrato = await generarNumeroContrato();
+
+        // ==========================================
         // CONSTRUIR OBJETO VENTA
         // ==========================================
         const datosVenta = {
+            numeroContrato,
             tipoVenta,
             fechaRealizada: fechaRealizadaARG,
             fechaEntrega: fechaEntregaARG,
@@ -549,8 +585,8 @@ const crearVenta2 = async (req, res) => {
                 dni: garante.dni || '',
                 ...(garante.cuil && { cuil: garante.cuil }),
                 telefono: garante.telefono || '',
-                relacion: garante.relacion || '',      // 👈 NUEVO
-                ocupacion: garante.ocupacion || '',    // 👈 NUEVO
+                relacion: garante.relacion || '',
+                ocupacion: garante.ocupacion || '',
                 ...(garante.telefono2 && { telefono2: garante.telefono2 }),
                 ...(garante.email && { email: garante.email }),
                 direccion: garante.direccion || ''
@@ -572,10 +608,9 @@ const crearVenta2 = async (req, res) => {
         // ==========================================
         if (equipoSeleccionadoInfo) {
             try {
-                // 👉 Agregar nota de venta al equipo
                 const notasActualizadas = [...(equipoSeleccionadoInfo.notas || [])];
                 notasActualizadas.push({
-                    texto: `[VENTA] Equipo vendido en venta #${ventaGuardada._id} - Cliente: ${clienteDB.nombre} ${clienteDB.apellido} (DNI: ${clienteDB.dni})`,
+                    texto: `[VENTA] Equipo vendido en venta #${ventaGuardada._id} (Contrato N° ${ventaGuardada.numeroContratoFormateado || numeroContrato}) - Cliente: ${clienteDB.nombre} ${clienteDB.apellido} (DNI: ${clienteDB.dni})`,
                     fecha: fechaRealizadaARG,
                     usuario: {
                         nombre: vendedor || req.usuario?.nombre || 'Sistema'
@@ -607,9 +642,6 @@ const crearVenta2 = async (req, res) => {
         // GUARDAR/REUTILIZAR EQUIPO CANJE SI APLICA
         // ==========================================
         if (tipoVenta === 'plan_canje' && equipoCanje) {
-            // ==========================================
-            // 👉 VERIFICAR SI EL EQUIPO YA EXISTE POR IMEI
-            // ==========================================
             let equipoExistente = null;
 
             if (equipoCanje.imei) {
@@ -619,9 +651,6 @@ const crearVenta2 = async (req, res) => {
             }
 
             if (equipoExistente) {
-                // ==========================================
-                // 👉 REUTILIZAR EQUIPO EXISTENTE (NO duplicar)
-                // ==========================================
                 console.log(`🔄 Reingresando equipo existente: ${equipoExistente.nombre} (IMEI: ${equipoExistente.imei})`);
 
                 equipoExistente.origen = 'canje';
@@ -642,9 +671,8 @@ const crearVenta2 = async (req, res) => {
                 equipoExistente.disponible = true;
                 equipoExistente.ventaAsociada = null;
 
-                // 👉 Agregar nota de reingreso
                 equipoExistente.notas.push({
-                    texto: `[REINGRESO POR CANJE] Equipo reingresado como canje en venta #${ventaGuardada._id}. Valor tasado: $${equipoCanje.valorTasado}. Cliente anterior: ${clienteDB.nombre} ${clienteDB.apellido}`,
+                    texto: `[REINGRESO POR CANJE] Equipo reingresado como canje en venta #${ventaGuardada._id} (Contrato N° ${ventaGuardada.numeroContratoFormateado || numeroContrato}). Valor tasado: $${equipoCanje.valorTasado}. Cliente anterior: ${clienteDB.nombre} ${clienteDB.apellido}`,
                     fecha: new Date(),
                     usuario: {
                         nombre: vendedor || req.usuario?.nombre || 'Sistema'
@@ -654,9 +682,6 @@ const crearVenta2 = async (req, res) => {
 
                 await equipoExistente.save();
             } else {
-                // ==========================================
-                // 👉 CREAR NUEVO EQUIPO CANJE (no existía)
-                // ==========================================
                 console.log(`➕ Creando nuevo equipo canje: ${equipoCanje.nombre}`);
 
                 const datosEquipoCanje = {
@@ -675,7 +700,7 @@ const crearVenta2 = async (req, res) => {
                     fechaRecepcion: fechaRealizadaARG,
                     disponible: true,
                     notas: [{
-                        texto: `[INGRESO POR CANJE] Equipo ingresado como canje en venta #${ventaGuardada._id}. Valor tasado: $${equipoCanje.valorTasado}. Cliente: ${clienteDB.nombre} ${clienteDB.apellido}`,
+                        texto: `[INGRESO POR CANJE] Equipo ingresado como canje en venta #${ventaGuardada._id} (Contrato N° ${ventaGuardada.numeroContratoFormateado || numeroContrato}). Valor tasado: $${equipoCanje.valorTasado}. Cliente: ${clienteDB.nombre} ${clienteDB.apellido}`,
                         fecha: new Date(),
                         usuario: {
                             nombre: vendedor || req.usuario?.nombre || 'Sistema'
@@ -701,6 +726,7 @@ const crearVenta2 = async (req, res) => {
             const campo = Object.keys(error.keyValue)[0];
             const mensajes = {
                 'producto.imei': 'Ya existe una venta con ese IMEI',
+                'numeroContrato': 'Error de duplicado en número de contrato (reintentar)',
             };
             return res.status(409).json({
                 ok: false,

@@ -1,7 +1,7 @@
 const express = require('express');
 const { check } = require('express-validator');
 
-const { crearUsuario, actualizarUsuario, cargarUsuarios, CambiarEstadoUsuario } = require('../controlador/admin');
+const { crearUsuario, actualizarUsuario, cargarUsuarios, CambiarEstadoUsuario, actualizarCliente } = require('../controlador/admin');
 const { validarJWTRolesSuperiores } = require('../midelwaresdefin/ValidarJWT_Admin_Dev');
 const { validarCampos } = require('../midelwaresdefin/ValidarCampos');
 
@@ -50,6 +50,8 @@ routerAdmin.put(
   ],
   actualizarUsuario
 );
+
+routerAdmin.put('/update-clent/:id', actualizarCliente);
 
 //carga de todos los usuarios
 routerAdmin.get('/usuarios', validarJWTRolesSuperiores, cargarUsuarios);

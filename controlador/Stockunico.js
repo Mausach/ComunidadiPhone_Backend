@@ -563,6 +563,9 @@ const obtenerEquipoPorId = async (req, res) => {
 // ==========================================
 // 📋 LISTAR EQUIPOS (con filtros y paginación)
 // ==========================================
+// ==========================================
+// 📋 LISTAR EQUIPOS (con filtros y paginación)
+// ==========================================
 const listarEquipos = async (req, res) => {
     try {
         const {
@@ -576,6 +579,7 @@ const listarEquipos = async (req, res) => {
             localidad,
             desde,
             hasta,
+            busqueda,   // 👈 NUEVO: búsqueda global inteligente
             pagina = 1,
             limite = 50
         } = req.query;
@@ -584,6 +588,7 @@ const listarEquipos = async (req, res) => {
         // CONSTRUIR FILTROS
         // ==========================================
         const filtros = {};
+        const condicionesAnd = [];  // 👈 Acumulador para búsqueda inteligente
 
         if (origen && origen !== '') {
             filtros.origen = origen;
@@ -597,20 +602,64 @@ const listarEquipos = async (req, res) => {
             filtros.estado = estado;
         }
 
-        if (nombre) {
-            filtros.nombre = { $regex: nombre, $options: 'i' };
+        // ==========================================
+        // 👉 BÚSQUEDA INTELIGENTE (nombre, modelo, capacidad, imei)
+        // ==========================================
+        // Acepta: "IPHONE 17", "17 PRO", "IPHONE 13 PRO MAX", etc.
+        // Cada palabra busca en nombre, modelo, capacidad e imei
+        const terminoBusqueda = (busqueda && busqueda.trim() !== '')
+            ? busqueda.trim()
+            : (nombre && nombre.trim() !== '')
+                ? nombre.trim()
+                : null;
+
+        if (terminoBusqueda) {
+            const palabras = terminoBusqueda
+                .split(/\s+/)
+                .filter(p => p.length > 0);
+
+            if (palabras.length > 0) {
+                const condicionesPalabras = palabras.map(palabra => {
+                    const rx = new RegExp(
+                        palabra.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+                        'i'
+                    );
+                    return {
+                        $or: [
+                            { nombre: rx },
+                            { modelo: rx },
+                            { capacidad: rx },
+                            { imei: rx }
+                        ]
+                    };
+                });
+                condicionesAnd.push(...condicionesPalabras);
+            }
         }
 
-        if (modelo) {
-            filtros.modelo = { $regex: modelo, $options: 'i' };
+        // Filtros individuales explícitos (por si el front los envía)
+        if (modelo && modelo.trim() !== '') {
+            const rxModelo = new RegExp(
+                modelo.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+                'i'
+            );
+            condicionesAnd.push({ modelo: rxModelo });
         }
 
-        if (capacidad) {
-            filtros.capacidad = { $regex: capacidad, $options: 'i' };
+        if (capacidad && capacidad.trim() !== '') {
+            const rxCapacidad = new RegExp(
+                capacidad.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+                'i'
+            );
+            condicionesAnd.push({ capacidad: rxCapacidad });
         }
 
-        if (imei) {
-            filtros.imei = { $regex: imei, $options: 'i' };
+        if (imei && imei.trim() !== '') {
+            const rxImei = new RegExp(
+                imei.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+                'i'
+            );
+            condicionesAnd.push({ imei: rxImei });
         }
 
         if (localidad) {
@@ -622,6 +671,13 @@ const listarEquipos = async (req, res) => {
                 $gte: new Date(desde),
                 $lte: new Date(hasta)
             };
+        }
+
+        // ==========================================
+        // COMBINAR CONDICIONES CON $and
+        // ==========================================
+        if (condicionesAnd.length > 0) {
+            filtros.$and = condicionesAnd;
         }
 
         // ==========================================
@@ -657,8 +713,7 @@ const listarEquipos = async (req, res) => {
                 texto: nota.texto,
                 tipo: nota.tipo || 'general',
                 fecha: nota.fecha,
-                // 👉 Fecha formateada para el frontend
-                fechaFormateada: nota.fecha 
+                fechaFormateada: nota.fecha
                     ? new Date(nota.fecha).toLocaleDateString('es-AR', {
                         day: '2-digit',
                         month: '2-digit',
@@ -739,7 +794,7 @@ const listarEquipos = async (req, res) => {
         return res.status(200).json({
             ok: true,
             data: {
-                equipos: equiposConNotasFormateadas,  // 👈 Equipos con notas formateadas
+                equipos: equiposConNotasFormateadas,
                 paginacion: {
                     total,
                     pagina: parseInt(pagina),
@@ -782,7 +837,6 @@ const listarEquipos = async (req, res) => {
         });
     }
 };
-
 // ==========================================
 // 🗑️ ELIMINAR EQUIPO
 // ==========================================
