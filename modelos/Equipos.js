@@ -42,7 +42,25 @@ const equipoSchema = new Schema({
         type: String,
         trim: true
     },
-    
+
+    // ==========================================
+    // DATOS ADICIONALES DEL EQUIPO
+    // ==========================================
+    serie: {
+        type: String,
+        trim: true,
+        default: ''
+    },
+    ios: {
+        type: String,
+        trim: true,
+        default: ''
+    },
+    accesorios: {
+        type: [String],
+        default: []
+    },
+
     // ==========================================
     // LOCALIDAD/DESTINO
     // ==========================================
@@ -51,7 +69,7 @@ const equipoSchema = new Schema({
         trim: true,
         lowercase: true
     },
-    
+
     // ==========================================
     // ESTADO DEL EQUIPO
     // ==========================================
@@ -60,7 +78,7 @@ const equipoSchema = new Schema({
         enum: ['sellado', 'semi nuevo', 'reacondicionado', 'exhibicion', 'bueno', 'regular', 'malo'],
         default: 'sellado'
     },
-    
+
     // ==========================================
     // PRECIOS (para stock)
     // ==========================================
@@ -74,7 +92,7 @@ const equipoSchema = new Schema({
         min: 0,
         default: 0
     },
-    
+
     // ==========================================
     // VALOR TASADO (para canje)
     // ==========================================
@@ -83,7 +101,7 @@ const equipoSchema = new Schema({
         min: 0,
         default: 0
     },
-    
+
     // ==========================================
     // PROVEEDOR (opcional, para stock)
     // ==========================================
@@ -93,7 +111,7 @@ const equipoSchema = new Schema({
         email: String,
         factura: String
     },
-    
+
     // ==========================================
     // FECHAS
     // ==========================================
@@ -109,7 +127,7 @@ const equipoSchema = new Schema({
         type: Date,
         default: null
     },
-    
+
     // ==========================================
     // ESTADO DE DISPONIBILIDAD
     // ==========================================
@@ -117,7 +135,7 @@ const equipoSchema = new Schema({
         type: Boolean,
         default: true
     },
-    
+
     // ==========================================
     // REFERENCIA A VENTA ORIGEN (solo canje)
     // ==========================================
@@ -126,7 +144,7 @@ const equipoSchema = new Schema({
         ref: 'Venta',
         default: null
     },
-    
+
     // ==========================================
     // REFERENCIA A VENTA (si se vendió)
     // ==========================================
@@ -135,7 +153,7 @@ const equipoSchema = new Schema({
         ref: 'Venta',
         default: null
     },
-    
+
     // ==========================================
     // NOTAS
     // ==========================================

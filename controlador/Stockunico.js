@@ -7,15 +7,21 @@ const Venta = require('../modelos/Venta');
 // ==========================================
 // 📥 CARGAR EQUIPO AL STOCK (origen: 'stock')
 // ==========================================
+// ==========================================
+// 📥 CARGAR EQUIPO AL STOCK (origen: 'stock')
+// ==========================================
 const cargarEquipo = async (req, res) => {
     try {
         const {
             nombre,
             modelo,
-            capacidad,      // 👉 NUEVO
+            capacidad,
             imei,
             color,
             bateria,
+            serie,          // 👈 NUEVO
+            ios,            // 👈 NUEVO
+            accesorios,     // 👈 NUEVO
             localidad,
             estado,
             precioCompra,
@@ -70,9 +76,9 @@ const cargarEquipo = async (req, res) => {
                 });
             }
 
-            const imeiExistente = await Equipos.findOne({ 
+            const imeiExistente = await Equipos.findOne({
                 imei: imei,
-                disponible: true 
+                disponible: true
             });
 
             if (imeiExistente) {
@@ -84,16 +90,28 @@ const cargarEquipo = async (req, res) => {
         }
 
         // ==========================================
+        // NORMALIZAR ACCESORIOS (array de strings)
+        // ==========================================
+        const accesoriosNormalizados = Array.isArray(accesorios)
+            ? accesorios
+                .map(a => (typeof a === 'string' ? a.trim() : ''))
+                .filter(a => a.length > 0)
+            : [];
+
+        // ==========================================
         // PREPARAR DATOS
         // ==========================================
         const nuevoEquipo = new Equipos({
-            origen: 'stock',  // 👉 Diferenciador
+            origen: 'stock',
             nombre: nombre.trim(),
             modelo: modelo?.trim() || '',
             capacidad: capacidad?.trim() || '',
             imei: imei?.trim() || '',
             color: color?.trim() || '',
             bateria: bateria?.trim() || '',
+            serie: serie?.trim() || '',           // 👈 NUEVO
+            ios: ios?.trim() || '',               // 👈 NUEVO
+            accesorios: accesoriosNormalizados,   // 👈 NUEVO
             localidad: localidad?.trim().toLowerCase() || '',
             estado: estado || 'sellado',
             precioCompra,
@@ -291,6 +309,9 @@ const editarEquipo = async (req, res) => {
             imei,
             color,
             bateria,
+            serie,          // 👈 NUEVO
+            ios,            // 👈 NUEVO
+            accesorios,     // 👈 NUEVO
             localidad,
             estado,
             precioCompra,
@@ -411,6 +432,29 @@ const editarEquipo = async (req, res) => {
         if (bateria !== undefined) {
             equipo.bateria = bateria?.trim() || '';
             camposActualizados.bateria = bateria?.trim() || '';
+        }
+
+        // ==========================================
+        // NUEVOS CAMPOS: serie, ios, accesorios
+        // ==========================================
+        if (serie !== undefined) {
+            equipo.serie = serie?.trim() || '';
+            camposActualizados.serie = equipo.serie;
+        }
+
+        if (ios !== undefined) {
+            equipo.ios = ios?.trim() || '';
+            camposActualizados.ios = equipo.ios;
+        }
+
+        if (accesorios !== undefined) {
+            // Permitimos mandar [] para vaciar el array
+            equipo.accesorios = Array.isArray(accesorios)
+                ? accesorios
+                    .map(a => (typeof a === 'string' ? a.trim() : ''))
+                    .filter(a => a.length > 0)
+                : [];
+            camposActualizados.accesorios = equipo.accesorios;
         }
 
         if (localidad !== undefined) {

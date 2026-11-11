@@ -117,11 +117,13 @@ const ventaSchema = new Schema({
         dni: String,
         cuil: String,
         telefono: String,
+        telefono2: String,
         relacion: String, //relacion con solicitante
         ocupacion: String, //ocupacion del garante
         telefono2: String,
         email: String,
         direccion: String,
+        localidad: String,
     },
 
     // ==========================================

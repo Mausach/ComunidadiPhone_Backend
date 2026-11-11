@@ -288,7 +288,7 @@ const crearVenta2 = async (req, res) => {
             });
         }
 
-        const tiposValidos = ['contado', 'sistema1', 'sistema2', 'plan_canje'];
+        const tiposValidos = ['contado', 'sistema1', 'sistema2', 'plan_canje', 'plan_canje_cuotas'];
         if (!tiposValidos.includes(tipoVenta)) {
             return res.status(400).json({
                 ok: false,
@@ -349,9 +349,11 @@ const crearVenta2 = async (req, res) => {
         }
 
         // ==========================================
-        // 🚫 VALIDAR IMEI DUPLICADO (solo si NO es plan_canje)
+        // 🚫 VALIDAR IMEI DUPLICADO (solo si NO es plan de canje)
         // ==========================================
-        if (producto.imei && tipoVenta !== 'plan_canje') {
+        const esPlanCanje = ['plan_canje', 'plan_canje_cuotas'].includes(tipoVenta);
+
+        if (producto.imei && !esPlanCanje) {
             const imeiExistente = await Venta.findOne({
                 'producto.imei': producto.imei,
                 estado: true
@@ -368,7 +370,7 @@ const crearVenta2 = async (req, res) => {
         // ==========================================
         // VALIDAR IMEI DEL EQUIPO CANJE (solo si ya es canje activo)
         // ==========================================
-        if (equipoCanje?.imei && tipoVenta === 'plan_canje') {
+        if (equipoCanje?.imei && esPlanCanje) {
             const imeiCanjeExistente = await Equipos.findOne({
                 imei: equipoCanje.imei,
                 disponible: true,
@@ -496,6 +498,34 @@ const crearVenta2 = async (req, res) => {
                 montoTotal = equipoSeleccionadoInfo?.precioVenta || producto.valor;
                 frecuenciaCuota = null;
                 break;
+
+            case 'plan_canje_cuotas':
+                if (!equipoCanje || !equipoCanje.valorTasado) {
+                    return res.status(400).json({
+                        ok: false,
+                        message: 'Plan canje + cuotas requiere datos del equipo recibido y su valor tasado'
+                    });
+                }
+
+                if (!montoCuota || !cantidadCuotas) {
+                    return res.status(400).json({
+                        ok: false,
+                        message: 'Plan canje + cuotas requiere montoCuota y cantidadCuotas'
+                    });
+                }
+
+                cuotasGeneradas = generarCuotas({
+                    montoCuota,
+                    cantidadCuotas,
+                    fechaInicio: fechaInicioCuotas,
+                    frecuencia: frecuencia || 'mensual'
+                });
+
+                // ⚠️ NO se marca la primera cuota como pagada (regla 4)
+
+                montoTotal = equipoSeleccionadoInfo?.precioVenta || producto.valor;
+                frecuenciaCuota = frecuencia || 'mensual';
+                break;
         }
 
         // ==========================================
@@ -508,6 +538,11 @@ const crearVenta2 = async (req, res) => {
 
         if (tipoVenta === 'sistema2' && cuotasGeneradas.length > 0) {
             montoPagadoInicial += cuotasGeneradas[0].montoCuota;
+        }
+
+        // 🆕 plan_canje_cuotas: el valor tasado cuenta como pago inicial
+        if (tipoVenta === 'plan_canje_cuotas' && equipoCanje?.valorTasado) {
+            montoPagadoInicial += equipoCanje.valorTasado;
         }
 
         // ==========================================
@@ -583,6 +618,8 @@ const crearVenta2 = async (req, res) => {
                 nombre: garante.nombre || '',
                 apellido: garante.apellido || '',
                 dni: garante.dni || '',
+                // 👇 nuevo: localidad opcional del garante
+                ...(garante.localidad && { localidad: garante.localidad }),
                 ...(garante.cuil && { cuil: garante.cuil }),
                 telefono: garante.telefono || '',
                 relacion: garante.relacion || '',
@@ -640,8 +677,9 @@ const crearVenta2 = async (req, res) => {
 
         // ==========================================
         // GUARDAR/REUTILIZAR EQUIPO CANJE SI APLICA
+        // (plan_canje y plan_canje_cuotas)
         // ==========================================
-        if (tipoVenta === 'plan_canje' && equipoCanje) {
+        if (esPlanCanje && equipoCanje) {
             let equipoExistente = null;
 
             if (equipoCanje.imei) {
