@@ -4,6 +4,7 @@ const express = require('express');
 const { check } = require('express-validator');
 const { validarCampos } = require('../midelwaresdefin/ValidarCampos');
 const { listarEquipos, obtenerEquipoPorId, cargarEquipo, cargarEquipoCanje, editarEquipo, eliminarEquipo, obtenerEquipoCanjePorVenta } = require('../controlador/Stockunico');
+const { validarJWTRolesGerencia } = require('../midelwaresdefin/validarJWTRolesGerencia');
 
 
 const routerEquipo = express.Router();
@@ -14,22 +15,22 @@ const routerEquipo = express.Router();
 
 // 📋 Listar equipos (con filtros y paginación)
 // Query params: origen, disponible, estado, nombre, modelo, capacidad, imei, localidad
-routerEquipo.get('/equipos', listarEquipos);
+routerEquipo.get('/equipos', validarJWTRolesGerencia, listarEquipos);
 
 // 🔍 Obtener un equipo por ID
-routerEquipo.get('/equipos/:id', obtenerEquipoPorId);
+routerEquipo.get('/equipos/:id',validarJWTRolesGerencia, obtenerEquipoPorId);
 
 // 📥 Cargar equipo al stock (origen: 'stock')
-routerEquipo.post('/new-equipo', cargarEquipo);
+routerEquipo.post('/new-equipo',validarJWTRolesGerencia, cargarEquipo);
 
 // 📥 Cargar equipo de canje (origen: 'canje')
-routerEquipo.post('/new-canje', cargarEquipoCanje);
+routerEquipo.post('/new-canje', validarJWTRolesGerencia, cargarEquipoCanje);
 
 // ✏️ Editar equipo
-routerEquipo.put('/edit-equipo/:id', editarEquipo);
+routerEquipo.put('/edit-equipo/:id',validarJWTRolesGerencia, editarEquipo);
 
 // 🗑️ Eliminar equipo
-routerEquipo.delete('/del-equipo/:id', eliminarEquipo);
+routerEquipo.delete('/del-equipo/:id',validarJWTRolesGerencia, eliminarEquipo);
 
 // 📤 Marcar como vendido (asociar a venta)
 //routerEquipo.put('/:id/vender', marcarComoVendido);
@@ -38,6 +39,6 @@ routerEquipo.delete('/del-equipo/:id', eliminarEquipo);
 //routerEquipo.put('/:id/reingresar', reingresarEquipo);
 
 // 🔍 Obtener un equipo por ID
-routerEquipo.get('/equipos/por-venta/:id', obtenerEquipoCanjePorVenta);
+routerEquipo.get('/equipos/por-venta/:id',validarJWTRolesGerencia, obtenerEquipoCanjePorVenta);
 
 module.exports = routerEquipo;

@@ -109,44 +109,50 @@ const detalleVentaCobranza = async (req, res) => {
 
 const cobrarCuotas = async (req, res) => {
     try {
-        const {
-            idVenta,
-            cuotas,
-            cobrador,
-            nota
-        } = req.body;
+        const { idVenta, cuotas, cobrador, nota } = req.body;
 
         // ==========================================
-        // VALIDACIONES
+        // VALIDACIONES GENERALES
         // ==========================================
         if (!idVenta) {
-            return res.status(400).json({
-                ok: false,
-                message: 'El ID de la venta es obligatorio'
-            });
+            return res.status(400).json({ ok: false, message: 'El ID de la venta es obligatorio' });
         }
 
         if (!cuotas || !Array.isArray(cuotas) || cuotas.length === 0) {
-            return res.status(400).json({
-                ok: false,
-                message: 'Debe especificar al menos una cuota para cobrar'
-            });
+            return res.status(400).json({ ok: false, message: 'Debe especificar al menos una cuota para cobrar' });
         }
 
         if (!cobrador || !cobrador.nombre) {
-            return res.status(400).json({
-                ok: false,
-                message: 'El nombre del cobrador es obligatorio'
-            });
+            return res.status(400).json({ ok: false, message: 'El nombre del cobrador es obligatorio' });
         }
 
-        // Validar cada cuota
+        // ==========================================
+        // VALIDAR CADA CUOTA (incluye lógica MIXTO)
+        // ==========================================
         for (const cuota of cuotas) {
             if (!cuota.numeroCuota || !cuota.metodoPago) {
                 return res.status(400).json({
                     ok: false,
                     message: `Cada cuota debe tener numeroCuota y metodoPago`
                 });
+            }
+
+            if (cuota.metodoPago === 'mixto') {
+                if (!Array.isArray(cuota.pagos) || cuota.pagos.length < 2) {
+                    return res.status(400).json({
+                        ok: false,
+                        message: `La cuota ${cuota.numeroCuota} es mixta y debe incluir al menos 2 pagos en el array 'pagos'.`
+                    });
+                }
+
+                for (const p of cuota.pagos) {
+                    if (!p.metodo || !p.monto || p.monto <= 0) {
+                        return res.status(400).json({
+                            ok: false,
+                            message: `Cada pago mixto debe tener 'metodo' y 'monto' mayor a 0 (cuota ${cuota.numeroCuota}).`
+                        });
+                    }
+                }
             }
         }
 
@@ -156,17 +162,11 @@ const cobrarCuotas = async (req, res) => {
         const venta = await Venta.findById(idVenta);
 
         if (!venta) {
-            return res.status(404).json({
-                ok: false,
-                message: 'Venta no encontrada'
-            });
+            return res.status(404).json({ ok: false, message: 'Venta no encontrada' });
         }
 
         if (!venta.estado) {
-            return res.status(400).json({
-                ok: false,
-                message: 'La venta está inactiva'
-            });
+            return res.status(400).json({ ok: false, message: 'La venta está inactiva' });
         }
 
         // ==========================================
@@ -180,27 +180,42 @@ const cobrarCuotas = async (req, res) => {
             const cuota = venta.cuotas.find(c => c.numeroCuota === Number(cuotaData.numeroCuota));
 
             if (!cuota) {
-                cuotasConError.push({
-                    numeroCuota: cuotaData.numeroCuota,
-                    error: 'Cuota no encontrada'
-                });
+                cuotasConError.push({ numeroCuota: cuotaData.numeroCuota, error: 'Cuota no encontrada' });
                 continue;
             }
 
             if (cuota.estado_cuota === 'pagada') {
-                cuotasConError.push({
-                    numeroCuota: cuotaData.numeroCuota,
-                    error: 'Cuota ya está pagada'
-                });
+                cuotasConError.push({ numeroCuota: cuotaData.numeroCuota, error: 'Cuota ya está pagada' });
                 continue;
             }
 
             // ==========================================
             // CALCULAR TOTAL DE LA CUOTA (CON RECARGOS)
             // ==========================================
-            // Calcular total de recargos acumulados
             const totalRecargos = cuota.recargos?.reduce((sum, r) => sum + r.monto, 0) || 0;
             const totalCuota = cuota.montoCuota + totalRecargos;
+
+            // ==========================================
+            // VALIDAR PAGOS MIXTOS CONTRA EL TOTAL
+            // ==========================================
+            let detallePagos = null;
+
+            if (cuotaData.metodoPago === 'mixto') {
+                const sumaPagos = cuotaData.pagos.reduce((sum, p) => sum + Number(p.monto), 0);
+
+                if (Math.abs(sumaPagos - totalCuota) > 1) {
+                    cuotasConError.push({
+                        numeroCuota: cuotaData.numeroCuota,
+                        error: `La suma de pagos mixtos ($${sumaPagos}) no coincide con el total de la cuota ($${totalCuota}).`
+                    });
+                    continue;
+                }
+
+                detallePagos = cuotaData.pagos.map(p => ({
+                    metodo: p.metodo,
+                    monto: Number(p.monto)
+                }));
+            }
 
             // ==========================================
             // MARCAR COMO PAGADA
@@ -208,58 +223,68 @@ const cobrarCuotas = async (req, res) => {
             cuota.estado_cuota = 'pagada';
             cuota.fechaCobrada = fechaPago;
             cuota.metodoPago = cuotaData.metodoPago;
-            cuota.montoPagado = totalCuota; // Incluye recargos
-            cuota.cobrador = {
-                nombre: cobrador.nombre
-            };
+            cuota.montoPagado = totalCuota;
+            cuota.cobrador = { nombre: cobrador.nombre };
+
+            // Inicializar notas si no existe
+            if (!cuota.notas) cuota.notas = [];
 
             // ==========================================
-            // AGREGAR NOTA DE PAGO (con recargos incluidos)
+            // 👇 NOTA AUTOMÁTICA DE COBRO (SIEMPRE)
+            // ==========================================
+            let textoCobro = '';
+
+            if (detallePagos) {
+                // Mixto: mostrar el desglose
+                const desglose = detallePagos
+                    .map(p => `${p.metodo}: $${p.monto.toLocaleString('es-AR')}`)
+                    .join(' + ');
+                textoCobro = `[COBRO] Pago MIXTO - ${desglose} (Total: $${totalCuota.toLocaleString('es-AR')})`;
+            } else {
+                // Simple: mostrar método y monto
+                textoCobro = `[COBRO] Pago en ${cuotaData.metodoPago} - Monto: $${totalCuota.toLocaleString('es-AR')}`;
+            }
+
+            // Si había recargos, aclararlo
+            if (totalRecargos > 0) {
+                textoCobro += ` (incluye $${totalRecargos.toLocaleString('es-AR')} de recargos)`;
+            }
+
+            cuota.notas.push({
+                texto: textoCobro,
+                fecha: fechaPago,
+                usuario: { nombre: cobrador.nombre }
+            });
+
+            // ==========================================
+            // NOTA MANUAL (si el cobrador escribió algo)
             // ==========================================
             const textoNota = cuotaData.nota || nota;
             if (textoNota && textoNota.trim() !== '') {
                 cuota.notas.push({
-                    texto: textoNota,
+                    texto: `[OBSERVACIÓN] ${textoNota}`,
                     fecha: fechaPago,
-                    usuario: {
-                        nombre: cobrador.nombre
-                    }
-                });
-            }
-
-            // ==========================================
-            // AGREGAR NOTA SOBRE RECARGOS (si los había)
-            // ==========================================
-            if (totalRecargos > 0) {
-                cuota.notas.push({
-                    texto: `[RECARGOS PAGADOS] Se cobraron $${totalRecargos.toLocaleString('es-AR')} en recargos acumulados (${cuota.recargos.length} recargo(s))`,
-                    fecha: fechaPago,
-                    usuario: {
-                        nombre: cobrador.nombre
-                    }
+                    usuario: { nombre: cobrador.nombre }
                 });
             }
 
             cuotasProcesadas.push({
                 numeroCuota: cuota.numeroCuota,
                 montoCuota: cuota.montoCuota,
-                totalRecargos: totalRecargos,
-                montoPagado: cuota.montoPagado, // Incluye recargos
+                totalRecargos,
+                montoPagado: cuota.montoPagado,
+                metodoPago: cuota.metodoPago,
+                detallePagos,
                 estado: 'pagada'
             });
         }
 
         // ==========================================
-        // RECALCULAR MONTOS (CON RECARGOS)
+        // RECALCULAR MONTOS
         // ==========================================
-
-        // 👉 Suma lo REALMENTE pagado de cada cuota (incluye recargos)
-        const totalPagadoCuotas = venta.cuotas
-            .reduce((total, c) => total + (c.montoPagado || 0), 0);
-
+        const totalPagadoCuotas = venta.cuotas.reduce((total, c) => total + (c.montoPagado || 0), 0);
         venta.montoPagado = totalPagadoCuotas;
 
-        // Sumar pagos iniciales si existen (anticipo/entrega inicial)
         if (venta.pagos && venta.pagos.length > 0) {
             const pagosIniciales = venta.pagos.reduce((total, p) => total + p.monto, 0);
             venta.montoPagado += pagosIniciales;
@@ -271,32 +296,18 @@ const cobrarCuotas = async (req, res) => {
         const hoy = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Argentina/Buenos_Aires' }));
         hoy.setHours(0, 0, 0, 0);
 
-        // Contar cuotas en estado "no pagada"
-        const cuotasNoPagadas = venta.cuotas.filter(c =>
-            c.estado_cuota === 'no pagada'
-        ).length;
-
-        // Verificar si todas están pagadas
+        const cuotasNoPagadas = venta.cuotas.filter(c => c.estado_cuota === 'no pagada').length;
         const todasPagadas = venta.cuotas.every(c => c.estado_cuota === 'pagada');
 
-        // Aplicar reglas de conducta basadas en comportamiento real
-        if (todasPagadas) {
-            venta.conducta_pago = 'cancelado';
-        } else if (cuotasNoPagadas >= 4) {
-            venta.conducta_pago = 'caducado';
-        } else if (cuotasNoPagadas >= 2) {
-            venta.conducta_pago = 'cobro judicial';
-        } else if (cuotasNoPagadas >= 1) {
-            venta.conducta_pago = 'atrasado';
-        } else {
-            venta.conducta_pago = 'al dia';
-        }
+        if (todasPagadas) venta.conducta_pago = 'cancelado';
+        else if (cuotasNoPagadas >= 4) venta.conducta_pago = 'caducado';
+        else if (cuotasNoPagadas >= 2) venta.conducta_pago = 'cobro judicial';
+        else if (cuotasNoPagadas >= 1) venta.conducta_pago = 'atrasado';
+        else venta.conducta_pago = 'al dia';
 
-        // Calcular cuotas vencidas (solo informativo)
         const cuotasVencidasNoPagadas = venta.cuotas.filter(c => {
             if (c.estado_cuota === 'pagada') return false;
-            const fechaCobro = new Date(c.fechaCobro);
-            return fechaCobro < hoy;
+            return new Date(c.fechaCobro) < hoy;
         }).length;
 
         // ==========================================
@@ -304,7 +315,6 @@ const cobrarCuotas = async (req, res) => {
         // ==========================================
         await venta.save();
 
-        // 👉 Calcular monto pendiente real (incluye recargos de cuotas pendientes)
         const montoPendienteReal = venta.cuotas
             .filter(c => c.estado_cuota !== 'pagada')
             .reduce((total, c) => {
@@ -326,7 +336,6 @@ const cobrarCuotas = async (req, res) => {
                     totalCuotas: venta.cuotas.length,
                     cuotasPagadas: venta.cuotas.filter(c => c.estado_cuota === 'pagada').length,
                     cuotasVencidasNoPagadas,
-                    // ✅ Información extra sobre recargos
                     totalRecargosCobrados: venta.cuotas
                         .filter(c => c.estado_cuota === 'pagada')
                         .reduce((total, c) => {
@@ -1339,6 +1348,437 @@ const agregarNotaCuota = async (req, res) => {
     }
 };
 
+///NUEVO PANEL PARA COBRANZAAA
+
+const TZ = 'America/Argentina/Buenos_Aires';
+
+// ==========================================
+// Helpers de fecha
+// ==========================================
+const rangoMesArgentina = (mesStr) => {
+    const match = /^(\d{4})-(\d{2})$/.exec(mesStr || '');
+    if (!match) return null;
+    const year = parseInt(match[1], 10);
+    const month = parseInt(match[2], 10);
+    if (month < 1 || month > 12) return null;
+
+    const mm = String(month).padStart(2, '0');
+    const desdeStr = `${year}-${mm}-01T00:00:00-03:00`;
+    const nextYear = month === 12 ? year + 1 : year;
+    const nextMonth = month === 12 ? 1 : month + 1;
+    const nextMM = String(nextMonth).padStart(2, '0');
+    const hastaStr = `${nextYear}-${nextMM}-01T00:00:00-03:00`;
+
+    return { desde: new Date(desdeStr), hasta: new Date(hastaStr) };
+};
+
+const hoyInicioArgentina = () => {
+    const ahora = new Date();
+    const partes = new Intl.DateTimeFormat('en-CA', {
+        timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit'
+    }).formatToParts(ahora);
+    const y = partes.find(p => p.type === 'year').value;
+    const m = partes.find(p => p.type === 'month').value;
+    const d = partes.find(p => p.type === 'day').value;
+    return new Date(`${y}-${m}-${d}T00:00:00-03:00`);
+};
+
+const diasEntre = (fecha, hoy) => {
+    const MS_POR_DIA = 1000 * 60 * 60 * 24;
+    const a = new Date(fecha).setUTCHours(0, 0, 0, 0);
+    const b = new Date(hoy).setUTCHours(0, 0, 0, 0);
+    return Math.round((b - a) / MS_POR_DIA);
+};
+
+const diasDiferencia = (fechaInicio, fechaFin) => {
+    if (!fechaInicio || !fechaFin) return null;
+    const MS_POR_DIA = 1000 * 60 * 60 * 24;
+    const a = new Date(fechaInicio).setUTCHours(0, 0, 0, 0);
+    const b = new Date(fechaFin).setUTCHours(0, 0, 0, 0);
+    return Math.round((b - a) / MS_POR_DIA);
+};
+
+const formatearFechaARG = (date) => {
+    if (!date) return null;
+    const d = new Date(date);
+    if (isNaN(d.getTime())) return null;
+    return new Intl.DateTimeFormat('en-CA', {
+        timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit'
+    }).format(d);
+};
+
+// ==========================================
+// Helpers de cálculo
+// ==========================================
+const sumarRecargos = (cuota) =>
+    (cuota.recargos || []).reduce((sum, r) => sum + (r.monto || 0), 0);
+
+const saldoCuota = (cuota) =>
+    (cuota.montoCuota || 0) + sumarRecargos(cuota) - (cuota.montoPagado || 0);
+
+// Esperado puro: NO resta lo pagado
+const esperadoCuota = (cuota) =>
+    (cuota.montoCuota || 0) + sumarRecargos(cuota);
+
+const redondear2 = (n) => Math.round(n * 100) / 100;
+
+const ESTADOS_IMPUESTOS = ['pendiente', 'pago parcial', 'no pagada'];
+const TIPOS_VENTA_VALIDOS = ['sistema1', 'sistema2', 'plan_canje_cuotas'];
+
+// ==========================================
+// GET /cobranza/panel
+// ==========================================
+const getPanelCobranza = async (req, res) => {
+    try {
+        const { mes, nombre, localidad, tipoVenta } = req.query;
+
+        const rango = rangoMesArgentina(mes);
+        if (!rango) {
+            return res.status(400).json({
+                ok: false,
+                message: 'El parámetro "mes" es obligatorio y debe tener formato YYYY-MM (ej. 2026-11)'
+            });
+        }
+        const { desde, hasta } = rango;
+
+        const pagina = Math.max(parseInt(req.query.pagina, 10) || 1, 1);
+        const limite = Math.min(Math.max(parseInt(req.query.limite, 10) || 20, 1), 100);
+
+        const filtrosComunes = { estado: true };
+
+        if (nombre && nombre.trim()) {
+            const regex = new RegExp(nombre.trim(), 'i');
+            filtrosComunes.$or = [
+                { 'cliente.nombre': regex },
+                { 'cliente.apellido': regex }
+            ];
+        }
+
+        if (localidad && localidad.trim()) {
+            filtrosComunes.localidad = localidad.trim().toLowerCase();
+        }
+
+        // Filtro tipoVenta
+        if (tipoVenta && tipoVenta.trim()) {
+            const tipo = tipoVenta.trim();
+            if (!TIPOS_VENTA_VALIDOS.includes(tipo)) {
+                return res.status(400).json({
+                    ok: false,
+                    message: `Tipo de venta inválido: "${tipo}". Válidos: ${TIPOS_VENTA_VALIDOS.join(', ')}`
+                });
+            }
+            filtrosComunes.tipoVenta = tipo;
+        }
+
+        // ==========================================
+        // Query A: ventas con ≥1 cuota con fechaCobro en el mes
+        // ==========================================
+        const filtroMes = {
+            ...filtrosComunes,
+            cuotas: {
+                $elemMatch: { fechaCobro: { $gte: desde, $lt: hasta } }
+            }
+        };
+
+        // ==========================================
+        // Query B: pagosDestiempo (solo Caso A)
+        // ==========================================
+        const filtroPagosDestiempo = {
+            ...filtrosComunes,
+            cuotas: {
+                $elemMatch: {
+                    fechaCobro: { $gte: desde, $lt: hasta },
+                    estado_cuota: 'pagada',
+                    fechaCobrada: { $ne: null },
+                    $or: [
+                        { fechaCobrada: { $lt: desde } },
+                        { fechaCobrada: { $gte: hasta } }
+                    ]
+                }
+            }
+        };
+
+        const [ventasDB, ventasPD_DB] = await Promise.all([
+            Venta.find(filtroMes).lean(),
+            Venta.find(filtroPagosDestiempo)
+                .select('_id numeroContrato cliente producto cuotas')
+                .lean()
+        ]);
+
+        const hoy = hoyInicioArgentina();
+
+        // ==========================================
+        // PROCESAMIENTO QUERY A
+        // ==========================================
+        let aCobrar = 0;
+        let cobrado = 0;
+        let vencido = 0;
+
+        const contadoresTabs = { porVencer: 0, enMora: 0, legal: 0, cobradas: 0 };
+        const ventasProcesadas = [];
+
+        for (const venta of ventasDB) {
+            const cuotas = venta.cuotas || [];
+
+            const cuotasDelMes = cuotas.filter(c =>
+                c.fechaCobro && c.fechaCobro >= desde && c.fechaCobro < hasta
+            );
+
+            if (cuotasDelMes.length === 0) continue;
+
+            // ---------- resumen ----------
+            for (const c of cuotasDelMes) {
+                // aCobrar: esperado puro
+                aCobrar += esperadoCuota(c);
+
+                // cobrado: pagada o pago parcial, fechaCobrada dentro del mes
+                if (
+                    ['pagada', 'pago parcial'].includes(c.estado_cuota) &&
+                    c.fechaCobrada &&
+                    c.fechaCobrada >= desde &&
+                    c.fechaCobrada < hasta
+                ) {
+                    cobrado += c.montoPagado || 0;
+                }
+
+                // vencido: no pagada con recargos → saldo real pendiente
+                if (
+                    c.estado_cuota === 'no pagada' &&
+                    (c.recargos || []).length > 0
+                ) {
+                    vencido += saldoCuota(c);
+                }
+            }
+
+            // ---------- resumen cuotas ----------
+            const totalDelMes = cuotasDelMes.length;
+            const pagadasDelMes = cuotasDelMes.filter(c => c.estado_cuota === 'pagada').length;
+            const pendientesDelMes = cuotasDelMes.filter(c =>
+                ['pendiente', 'pago parcial'].includes(c.estado_cuota)
+            ).length;
+            const atrasadasDelMes = cuotasDelMes.filter(c =>
+                c.estado_cuota === 'no pagada' ||
+                (['pendiente', 'pago parcial'].includes(c.estado_cuota) && c.fechaCobro < hoy)
+            ).length;
+
+            // ---------- tabs ----------
+            const todasPagadasEnMes = cuotasDelMes.every(c =>
+                c.estado_cuota === 'pagada' &&
+                c.fechaCobrada &&
+                c.fechaCobrada >= desde &&
+                c.fechaCobrada < hasta
+            );
+            if (todasPagadasEnMes) {
+                contadoresTabs.cobradas += 1;
+            }
+            if (venta.conducta_pago === 'cobro judicial') {
+                contadoresTabs.legal += 1;
+            }
+
+            // ---------- proximaCuota ----------
+            const impagasDelMes = cuotasDelMes.filter(c =>
+                ESTADOS_IMPUESTOS.includes(c.estado_cuota)
+            );
+            const enMora = impagasDelMes
+                .filter(c => c.fechaCobro < hoy)
+                .sort((a, b) => a.fechaCobro - b.fechaCobro);
+            const porVencerList = impagasDelMes
+                .filter(c => c.fechaCobro >= hoy)
+                .sort((a, b) => a.fechaCobro - b.fechaCobro);
+            const proximaCuotaRaw = enMora[0] || porVencerList[0] || null;
+
+            let proximaCuota = null;
+            if (proximaCuotaRaw) {
+                const recargosTotal = sumarRecargos(proximaCuotaRaw);
+                const saldo = saldoCuota(proximaCuotaRaw);
+                const esFutura = proximaCuotaRaw.fechaCobro >= hoy;
+
+                proximaCuota = {
+                    numeroCuota: proximaCuotaRaw.numeroCuota,
+                    montoCuota: proximaCuotaRaw.montoCuota,
+                    montoPagado: proximaCuotaRaw.montoPagado || 0,
+                    fechaCobro: proximaCuotaRaw.fechaCobro,
+                    recargos: recargosTotal,
+                    saldoPendiente: saldo,
+                    estado_cuota: proximaCuotaRaw.estado_cuota,
+                    ...(esFutura
+                        ? { diasRestantes: diasEntre(proximaCuotaRaw.fechaCobro, hoy) * -1 }
+                        : { diasAtraso: diasEntre(proximaCuotaRaw.fechaCobro, hoy) })
+                };
+
+                if (proximaCuota.fechaCobro >= hoy) {
+                    contadoresTabs.porVencer += 1;
+                } else if (proximaCuota.estado_cuota === 'no pagada') {
+                    contadoresTabs.enMora += 1;
+                }
+            }
+
+            // 🆕 cuotaCobrada: si no hay próxima cuota, devolvemos la última pagada
+            let cuotaCobrada = null;
+            if (!proximaCuota) {
+                const cuotasPagadas = cuotasDelMes.filter(c => c.estado_cuota === 'pagada');
+                cuotasPagadas.sort((a, b) => new Date(b.fechaCobrada) - new Date(a.fechaCobrada));
+
+                const ultimaPagada = cuotasPagadas[0];
+                if (ultimaPagada) {
+                    cuotaCobrada = {
+                        numeroCuota: ultimaPagada.numeroCuota,
+                        montoCuota: ultimaPagada.montoCuota,
+                        montoPagado: ultimaPagada.montoPagado || 0,
+                        fechaCobro: ultimaPagada.fechaCobro,
+                        fechaCobrada: ultimaPagada.fechaCobrada,
+                        recargos: sumarRecargos(ultimaPagada),
+                        estado_cuota: ultimaPagada.estado_cuota
+                    };
+                }
+            }
+
+            // ---------- ultimoContacto ----------
+            const candidatas = [];
+            (venta.notas || []).forEach(n => {
+                if (n.fecha && n.texto) {
+                    candidatas.push({ texto: n.texto, fecha: n.fecha, origen: 'venta' });
+                }
+            });
+            cuotasDelMes.forEach(c => {
+                (c.notas || []).forEach(n => {
+                    if (n.fecha && n.texto) {
+                        candidatas.push({ texto: n.texto, fecha: n.fecha, origen: 'cuota' });
+                    }
+                });
+            });
+            candidatas.sort((a, b) => b.fecha - a.fecha);
+            const ultimoContacto = candidatas[0] || null;
+
+            // Todas las ventas entran a ventas[] (pagadas incluidas)
+            ventasProcesadas.push({
+                _id: venta._id,
+                numeroContrato: venta.numeroContrato || null,
+                numeroContratoFormateado: venta.numeroContrato
+                    ? String(venta.numeroContrato).padStart(5, '0') : null,
+                tipoVenta: venta.tipoVenta,
+                fechaRealizada: venta.fechaRealizada,
+                localidad: venta.localidad,
+                conducta_pago: venta.conducta_pago,
+                cliente: {
+                    nombre: venta.cliente?.nombre || '',
+                    apellido: venta.cliente?.apellido || '',
+                    dni: venta.cliente?.dni || '',
+                    telefono: venta.cliente?.telefono || ''
+                },
+                producto: {
+                    nombre: venta.producto?.nombre || '',
+                    modelo: venta.producto?.modelo || '',
+                    capacidad: venta.producto?.capacidad || '',
+                    imei: venta.producto?.imei || null
+                },
+                cuotas: {
+                    total: totalDelMes,
+                    pagadas: pagadasDelMes,
+                    pendientes: pendientesDelMes,
+                    atrasadas: atrasadasDelMes
+                },
+                proximaCuota,
+                cuotaCobrada, // 🆕
+                ultimoContacto
+            });
+        }
+
+        ventasProcesadas.sort((a, b) => {
+            const fa = a.proximaCuota?.fechaCobro
+                ? new Date(a.proximaCuota.fechaCobro).getTime() : Infinity;
+            const fb = b.proximaCuota?.fechaCobro
+                ? new Date(b.proximaCuota.fechaCobro).getTime() : Infinity;
+            return fa - fb;
+        });
+
+        const totalVentas = ventasProcesadas.length;
+        const totalPaginas = Math.max(Math.ceil(totalVentas / limite), 1);
+        const skip = (pagina - 1) * limite;
+        const ventasPaginadas = ventasProcesadas.slice(skip, skip + limite);
+
+        const efectividad = aCobrar > 0
+            ? redondear2((cobrado / aCobrar) * 100)
+            : 0;
+
+        // ==========================================
+        // PROCESAMIENTO QUERY B → pagosDestiempo
+        // ==========================================
+        let pdCantidad = 0;
+        let pdMonto = 0;
+        const pdDetalle = [];
+
+        for (const venta of ventasPD_DB) {
+            for (const cuota of venta.cuotas || []) {
+                if (cuota.estado_cuota !== 'pagada' || !cuota.fechaCobrada || !cuota.fechaCobro) continue;
+
+                const cobroEnMes = cuota.fechaCobro >= desde && cuota.fechaCobro < hasta;
+                const cobradaFueraDelMes = cuota.fechaCobrada < desde || cuota.fechaCobrada >= hasta;
+
+                if (!(cobroEnMes && cobradaFueraDelMes)) continue;
+
+                pdCantidad += 1;
+                pdMonto += cuota.montoPagado || 0;
+
+                pdDetalle.push({
+                    ventaId: venta._id,
+                    numeroContratoFormateado: venta.numeroContrato
+                        ? String(venta.numeroContrato).padStart(5, '0') : null,
+                    cliente: {
+                        nombre: venta.cliente?.nombre || '',
+                        apellido: venta.cliente?.apellido || '',
+                        dni: venta.cliente?.dni || ''
+                    },
+                    producto: venta.producto?.nombre || '',
+                    numeroCuota: cuota.numeroCuota,
+                    montoCuota: cuota.montoCuota || 0,
+                    montoPagado: cuota.montoPagado || 0,
+                    fechaCobroOriginal: formatearFechaARG(cuota.fechaCobro),
+                    fechaCobrada: formatearFechaARG(cuota.fechaCobrada),
+                    diasAtraso: diasDiferencia(cuota.fechaCobro, cuota.fechaCobrada),
+                    metodoPago: cuota.metodoPago || null
+                });
+            }
+        }
+
+        pdDetalle.sort((a, b) => {
+            if (a.fechaCobrada < b.fechaCobrada) return -1;
+            if (a.fechaCobrada > b.fechaCobrada) return 1;
+            return 0;
+        });
+
+        return res.status(200).json({
+            ok: true,
+            data: {
+                resumen: {
+                    aCobrar: redondear2(aCobrar),
+                    cobrado: redondear2(cobrado),
+                    vencido: redondear2(vencido),
+                    efectividad
+                },
+                contadoresTabs,
+                ventas: ventasPaginadas,
+                pagosDestiempo: {
+                    resumen: {
+                        cantidadCuotas: pdCantidad,
+                        montoTotal: redondear2(pdMonto)
+                    },
+                    detalle: pdDetalle
+                },
+                paginacion: { pagina, limite, totalVentas, totalPaginas }
+            }
+        });
+
+    } catch (error) {
+        console.error('Error al obtener panel de cobranza:', error);
+        return res.status(500).json({
+            ok: false,
+            message: `Error al obtener panel de cobranza: ${error.message}`
+        });
+    }
+};
+
+
 
 module.exports = {
     listarVentasCobranza,
@@ -1353,6 +1793,12 @@ module.exports = {
     eliminarRecargo,
 
     cambiarEstadoCuota,
-    agregarNotaCuota
+    agregarNotaCuota,
+
+
+    //nuevo panel
+    getPanelCobranza,
+    
+
 
 };

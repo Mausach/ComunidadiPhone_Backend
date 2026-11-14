@@ -58,6 +58,12 @@ const clienteSchema = new Schema({
         required: [true, 'La dirección es obligatoria'],
         trim: true
     },
+
+      // === referencia de direccion ===
+    referencia_dir: {
+        type: String,
+        trim: true
+    },
     
     // === Scoring Crediticio ===
     situacionCrediticia: {

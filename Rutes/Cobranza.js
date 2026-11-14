@@ -1,41 +1,39 @@
-//GET /api/cobranza/ventas?localidad=cordoba&estado=al dia
-//GET /api/cobranza/ventas?dni=30123456
-//GET /api/cobranza/ventas?nombre=juan&pagina=1&limite=10
-//GET /api/cobranza/ventas?fechaDesde=2026-07-01&fechaHasta=2026-07-31
-
-//GET /api/cobranza/ventas/60d5f9b5c2a1b2a1b2a1b2a1
-
 const express = require('express');
 const { check } = require('express-validator');
 
 
-const { listarVentasCobranza, detalleVentaCobranza, cobrarCuotas, editarFechaCuota, editarMontoCuota, cambiarEstadoCuota, agregarNotaCuota, listarCobranzasDelDia, editarRecargoCuota, agregarRecargoACuota, editarRecargo, eliminarRecargo } = require('../controlador/cobranza');
-const { validarJWTCobranza } = require('../midelwaresdefin/ValidarJWT_cobranza');
+const { listarVentasCobranza, detalleVentaCobranza, cobrarCuotas, editarFechaCuota, editarMontoCuota, cambiarEstadoCuota, agregarNotaCuota, listarCobranzasDelDia, editarRecargoCuota, agregarRecargoACuota, editarRecargo, eliminarRecargo, getPanelCobranza, getCobrosRecibidos } = require('../controlador/cobranza');
+//const { validarJWTCobranza } = require('../midelwaresdefin/ValidarJWT_cobranza');
+const { validarJWTRolesGerencia } = require('../midelwaresdefin/validarJWTRolesGerencia');
 
 const routerCob = express.Router();
 
-routerCob.get('/ventas', validarJWTCobranza, listarVentasCobranza);
+routerCob.get('/ventas', validarJWTRolesGerencia, listarVentasCobranza);
 //routerCob.get('/cobranzas-hoy', listarCobranzasDelDia);
-routerCob.get('/ventas/:id',validarJWTCobranza ,detalleVentaCobranza);
-routerCob.post('/cobrar-cuotas',validarJWTCobranza, cobrarCuotas);
+routerCob.get('/ventas/:id',validarJWTRolesGerencia ,detalleVentaCobranza);
+routerCob.post('/cobrar-cuotas',validarJWTRolesGerencia, cobrarCuotas);
 
 // En cobranzaRoutes.js
-routerCob.put('/cuotas/:idVenta/:numeroCuota/fecha',validarJWTCobranza ,editarFechaCuota);
-routerCob.put('/cuotas/:idVenta/:numeroCuota/monto',validarJWTCobranza ,editarMontoCuota);
+routerCob.put('/cuotas/:idVenta/:numeroCuota/fecha',validarJWTRolesGerencia ,editarFechaCuota);
+routerCob.put('/cuotas/:idVenta/:numeroCuota/monto',validarJWTRolesGerencia ,editarMontoCuota);
 // ==========================================
 // RUTA PARA EDITAR RECARGO DE UNA CUOTA
 // ==========================================
 //routerCob.put('/cuotas/:idVenta/:numeroCuota/recargo', validarJWTCobranza, editarRecargoCuota);
 // Agregar recargo manual a una cuota
-routerCob.post('/cuotas/:idVenta/:numeroCuota/recargo', validarJWTCobranza, agregarRecargoACuota);
-routerCob.put('/cuotas/:idVenta/:numeroCuota/estado',validarJWTCobranza, cambiarEstadoCuota);
-routerCob.post('/cuotas/:idVenta/:numeroCuota/nota',validarJWTCobranza, agregarNotaCuota);
+routerCob.post('/cuotas/:idVenta/:numeroCuota/recargo', validarJWTRolesGerencia, agregarRecargoACuota);
+routerCob.put('/cuotas/:idVenta/:numeroCuota/estado',validarJWTRolesGerencia, cambiarEstadoCuota);
+routerCob.post('/cuotas/:idVenta/:numeroCuota/nota',validarJWTRolesGerencia, agregarNotaCuota);
 
 // ✏️ Editar recargo
-routerCob.put('/:idVenta/:numeroCuota/recargo/:idRecargo', editarRecargo);
+routerCob.put('/:idVenta/:numeroCuota/recargo/:idRecargo',validarJWTRolesGerencia, editarRecargo);
 
 // 🗑️ Eliminar recargo
-routerCob.delete('/:idVenta/:numeroCuota/recargo/:idRecargo', eliminarRecargo);
+routerCob.delete('/:idVenta/:numeroCuota/recargo/:idRecargo',validarJWTRolesGerencia, eliminarRecargo);
+
+routerCob.get('/panel',validarJWTRolesGerencia, getPanelCobranza);
+
+
 
 
 module.exports = routerCob;

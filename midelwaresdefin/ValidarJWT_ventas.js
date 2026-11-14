@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 
+//DEBERIA QUEDAR FUERA DE USO POR ROLES ADMIN Y GERENCIA
 const validarJWTVentas = (req, res, next) => {  
     // Extraer el token del header 'x-token'
     const token = req.header('x-token');

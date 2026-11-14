@@ -14,9 +14,10 @@ const crearCliente = async (req, res) => {
         dni,
         cuil,
         telefono,
-        telefono2,  // 👉 NUEVO
+        telefono2,
         email,
         direccion,
+        referencia_dir,   // 👈 NUEVO
         situacionCrediticia
     } = req.body;
 
@@ -67,9 +68,10 @@ const crearCliente = async (req, res) => {
         // Solo agregar campos opcionales si tienen valor real
         if (cuil && cuil.trim() !== '') datosCliente.cuil = cuil.trim();
         if (telefono && telefono.trim() !== '') datosCliente.telefono = telefono.trim();
-        // 👉 NUEVO: telefono2 opcional
         if (telefono2 && telefono2.trim() !== '') datosCliente.telefono2 = telefono2.trim();
         if (email && email.trim() !== '') datosCliente.email = email.trim().toLowerCase();
+        // 👈 NUEVO: referencia_dir opcional
+        if (referencia_dir && referencia_dir.trim() !== '') datosCliente.referencia_dir = referencia_dir.trim();
         if (situacionCrediticia !== undefined && situacionCrediticia !== null && situacionCrediticia !== '') {
             datosCliente.situacionCrediticia = parseInt(situacionCrediticia, 10);
         }
@@ -89,7 +91,6 @@ const crearCliente = async (req, res) => {
     } catch (error) {
         console.error('Error al crear cliente:', error);
 
-        // Error de clave duplicada (dni, cuil, email)
         if (error.code === 11000) {
             const campoDuplicado = Object.keys(error.keyValue)[0];
             const mensajes = {
@@ -103,7 +104,6 @@ const crearCliente = async (req, res) => {
             });
         }
 
-        // Error de validación de Mongoose
         if (error.name === 'ValidationError') {
             const mensajes = Object.values(error.errors).map(err => err.message);
             return res.status(400).json({

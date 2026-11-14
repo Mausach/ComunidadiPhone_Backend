@@ -2,30 +2,27 @@
 const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 const { StreamableHTTPServerTransport } = require('@modelcontextprotocol/sdk/server/streamableHttp.js');
 const { z } = require('zod');
+const { mcpAuth } = require('getmcpauth'); // 👈 NUEVO: Middleware de OAuth 2.1
 
 // Importamos los servicios reales
 const { buscarClientePorDNI, consultarDeudaCliente } = require('./services/consultaService');
 const { listarVentasCobranzaService } = require('./services/ventasService');
 
-// Middleware de autenticación simple por Token
-const autenticarMCP = (req, res, next) => {
-    const authHeader = req.headers.authorization;
-    const tokenEsperado = process.env.MCP_API_TOKEN;
-
-    if (!tokenEsperado) {
-        console.error('⚠️ MCP_API_TOKEN no configurado en las variables de entorno.');
-        return res.status(500).json({ error: 'Configuración de MCP incompleta' });
-    }
-
-    if (!authHeader || authHeader !== `Bearer ${tokenEsperado}`) {
-        return res.status(401).json({ error: 'No autorizado' });
-    }
-    next();
-};
-
 // Función que monta el endpoint en la app Express
 const montarMCP = (app) => {
-    app.post('/mcp', autenticarMCP, async (req, res) => {
+    // ==========================================
+    // 🛡️ PROTECCIÓN OAUTH 2.1 CON GETMCPAUTH
+    // ==========================================
+    // Esto protege la ruta /mcp. Claude deberá autenticarse (vía GitHub) antes de usar las herramientas.
+    // El token nunca viaja en la URL; se maneja en el header Authorization de forma segura.
+    app.use(
+        "/mcp",
+        mcpAuth({ 
+            registrationSecret: process.env.MCPAUTH_SECRET 
+        })
+    );
+
+    app.post('/mcp', async (req, res) => {
         // Creamos un servidor nuevo por petición
         const server = new McpServer({
             name: "comunidad-iphone-mcp",
