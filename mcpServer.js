@@ -3,22 +3,29 @@ const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 const { StreamableHTTPServerTransport } = require('@modelcontextprotocol/sdk/server/streamableHttp.js');
 const { z } = require('zod');
 
-// Importamos los servicios reales
 const { buscarClientePorDNI, consultarDeudaCliente } = require('./services/consultaService');
 const { listarVentasCobranzaService } = require('./services/ventasService');
 
-// Función que monta el endpoint en la app Express
-const montarMCP = async (app) => { // 👈 Ahora es async
-    // 👇 Importación dinámica para cargar un paquete ES Module desde CommonJS
-    const { mcpAuth } = await import('getmcpauth');
+const montarMCP = async (app) => {
+    // Importación dinámica para cargar el paquete ES Module desde CommonJS
+    const { mcpAuth, mcpAuthResourceMetadataHandler } = await import('getmcpauth');
 
-    // ==========================================
-    // 🛡️ PROTECCIÓN OAUTH 2.1 CON GETMCPAUTH
-    // ==========================================
+    // 1. Servir el documento de metadata del recurso protegido (RFC 9728)
+    //    Claude busca esto después de recibir el 401 con el header WWW-Authenticate.
+    app.get(
+        "/.well-known/oauth-protected-resource/mcp",
+        mcpAuthResourceMetadataHandler({
+            resource: "https://comunidadiphone-backend.onrender.com/mcp",
+            authorizationServers: ["https://getmcpauth.dev"]
+        })
+    );
+
+    // 2. Proteger la ruta /mcp y decirle a Claude dónde está la metadata
     app.use(
         "/mcp",
         mcpAuth({ 
-            registrationSecret: process.env.MCPAUTH_SECRET 
+            registrationSecret: process.env.MCPAUTH_SECRET,
+            resourceMetadataUrl: "https://comunidadiphone-backend.onrender.com/.well-known/oauth-protected-resource/mcp"
         })
     );
 
