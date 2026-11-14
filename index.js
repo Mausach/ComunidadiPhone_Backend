@@ -115,7 +115,11 @@ app.use("/documentos", require('./Rutes/Doc'));
 // 🤖 MCP SERVER (Herramientas para Claude)
 // ==========================================
 const { montarMCP } = require('./mcpServer');
-montarMCP(app);
+
+// 👇 Como montarMCP es async (por el await import de getmcpauth), lo ejecutamos así:
+(async () => {
+    await montarMCP(app);
+})();
 
 
 // ==========================================

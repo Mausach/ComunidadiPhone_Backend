@@ -2,19 +2,19 @@
 const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 const { StreamableHTTPServerTransport } = require('@modelcontextprotocol/sdk/server/streamableHttp.js');
 const { z } = require('zod');
-const { mcpAuth } = require('getmcpauth'); // 👈 NUEVO: Middleware de OAuth 2.1
 
 // Importamos los servicios reales
 const { buscarClientePorDNI, consultarDeudaCliente } = require('./services/consultaService');
 const { listarVentasCobranzaService } = require('./services/ventasService');
 
 // Función que monta el endpoint en la app Express
-const montarMCP = (app) => {
+const montarMCP = async (app) => { // 👈 Ahora es async
+    // 👇 Importación dinámica para cargar un paquete ES Module desde CommonJS
+    const { mcpAuth } = await import('getmcpauth');
+
     // ==========================================
     // 🛡️ PROTECCIÓN OAUTH 2.1 CON GETMCPAUTH
     // ==========================================
-    // Esto protege la ruta /mcp. Claude deberá autenticarse (vía GitHub) antes de usar las herramientas.
-    // El token nunca viaja en la URL; se maneja en el header Authorization de forma segura.
     app.use(
         "/mcp",
         mcpAuth({ 
