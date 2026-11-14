@@ -6,31 +6,25 @@ const { z } = require('zod');
 const { buscarClientePorDNI, consultarDeudaCliente } = require('./services/consultaService');
 const { listarVentasCobranzaService } = require('./services/ventasService');
 
-const montarMCP = async (app) => {
-    // Importación dinámica para cargar el paquete ES Module desde CommonJS
-    const { mcpAuth, mcpAuthResourceMetadataHandler } = await import('getmcpauth');
+// Middleware simple de autenticación por Token
+const autenticarMCP = (req, res, next) => {
+    const authHeader = req.headers.authorization;
+    const tokenEsperado = process.env.MCP_API_TOKEN; // Variable de entorno en Render
 
-    // 1. Servir el documento de metadata del recurso protegido (RFC 9728)
-    //    Claude busca esto después de recibir el 401 con el header WWW-Authenticate.
-    app.get(
-        "/.well-known/oauth-protected-resource/mcp",
-        mcpAuthResourceMetadataHandler({
-            resource: "https://comunidadiphone-backend.onrender.com/mcp",
-            authorizationServers: ["https://getmcpauth.dev"]
-        })
-    );
+    if (!tokenEsperado) {
+        return res.status(500).json({ error: 'Configuración de MCP incompleta' });
+    }
 
-    // 2. Proteger la ruta /mcp y decirle a Claude dónde está la metadata
-    app.use(
-        "/mcp",
-        mcpAuth({ 
-            registrationSecret: process.env.MCPAUTH_SECRET,
-            resourceMetadataUrl: "https://comunidadiphone-backend.onrender.com/.well-known/oauth-protected-resource/mcp"
-        })
-    );
+    if (!authHeader || authHeader !== `Bearer ${tokenEsperado}`) {
+        // El header WWW-Authenticate es opcional aquí, pero ayuda a clientes a entender que necesitan auth
+        res.setHeader('WWW-Authenticate', 'Bearer');
+        return res.status(401).json({ error: 'No autorizado' });
+    }
+    next();
+};
 
-    app.post('/mcp', async (req, res) => {
-        // Creamos un servidor nuevo por petición
+const montarMCP = (app) => {
+    app.post('/mcp', autenticarMCP, async (req, res) => {
         const server = new McpServer({
             name: "comunidad-iphone-mcp",
             version: "1.0.0"
@@ -102,7 +96,7 @@ const montarMCP = async (app) => {
         );
 
         const transport = new StreamableHTTPServerTransport({
-            sessionIdGenerator: undefined, // Stateless
+            sessionIdGenerator: undefined,
         });
 
         try {
